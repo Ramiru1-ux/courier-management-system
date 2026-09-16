@@ -1,0 +1,12 @@
+const express = require("express");
+const controller = require("../controllers/podController");
+const { authenticate } = require("../middleware/authMiddleware");
+const router = express.Router();
+router.use(authenticate);
+router.get("/shipment/:id", controller.getPOD);
+router.post("/shipment/:id", controller.createPOD);
+router.get("/:id", controller.getProofOfDeliveryById);
+router.post("/", controller.createProofOfDelivery);
+router.patch("/:id", controller.updateProofOfDelivery);
+router.delete("/:id", controller.deleteProofOfDelivery);
+module.exports = router;

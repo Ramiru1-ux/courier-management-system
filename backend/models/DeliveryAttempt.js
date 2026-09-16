@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("DeliveryAttempt", { delivery: { type: mongoose.Schema.Types.ObjectId, ref: "Delivery", required: true }, shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment" }, driver: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" }, attemptedAt: { type: Date, default: Date.now }, failureReason: String, notes: String, location: { latitude: Number, longitude: Number } }, { defaultStatus: "failed", indexes: [{ delivery: 1, attemptedAt: -1 }] });

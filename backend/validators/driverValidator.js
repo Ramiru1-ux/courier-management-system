@@ -1,0 +1,3 @@
+const { required, optionalString, phone, email, objectId, createMiddleware } = require("./validatorHelpers");
+const validateDriver = (body = {}) => ({ user: body.user ? objectId(body.user, "user") : undefined, name: optionalString(required(body.name, "name"), "name", 120), email: body.email ? email(body.email) : undefined, phone: body.phone ? phone(body.phone) : undefined, licenseNumber: optionalString(required(body.licenseNumber, "licenseNumber"), "licenseNumber", 60), licenseExpiry: body.licenseExpiry ? new Date(body.licenseExpiry) : undefined });
+module.exports = { validateDriver, validateCreateDriver: validateDriver, validateDriverRequest: createMiddleware(validateDriver) };

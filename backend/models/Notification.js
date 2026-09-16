@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Notification", { user: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, type: { type: String, default: "in_app" }, title: { type: String, required: true }, message: { type: String, required: true }, reference: mongoose.Schema.Types.ObjectId, read: { type: Boolean, default: false }, readAt: Date }, { defaultStatus: "unread", indexes: [{ user: 1, read: 1, createdAt: -1 }] });

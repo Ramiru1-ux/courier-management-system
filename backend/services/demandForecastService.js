@@ -1,0 +1,2 @@
+const forecastDemand = (history = [], periods = 7) => { const values = history.map(Number).filter(Number.isFinite); const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0; return { average: Math.round(average * 100) / 100, forecast: Array.from({ length: periods }, () => Math.round(average * 100) / 100) }; };
+module.exports = { forecastDemand, predictDemand: forecastDemand };

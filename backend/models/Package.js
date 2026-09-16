@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Package", { shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment" }, name: String, sku: String, weight: { type: Number, min: 0 }, dimensions: { length: Number, width: Number, height: Number }, quantity: { type: Number, min: 1, default: 1 }, value: { type: Number, min: 0, default: 0 } }, { defaultStatus: "created", indexes: [{ sku: 1 }, { shipment: 1 }] });

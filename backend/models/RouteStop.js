@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("RouteStop", { route: { type: mongoose.Schema.Types.ObjectId, ref: "Route", required: true }, shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment" }, address: { type: mongoose.Schema.Types.ObjectId, ref: "Address" }, sequence: Number, arrivedAt: Date, completedAt: Date, notes: String }, { defaultStatus: "pending", indexes: [{ route: 1, sequence: 1 }] });

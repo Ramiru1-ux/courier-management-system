@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Rating", { shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment", required: true }, customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer" }, driver: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" }, score: { type: Number, required: true, min: 1, max: 5 }, comment: String }, { defaultStatus: "published", indexes: [{ shipment: 1 }, { driver: 1 }] });

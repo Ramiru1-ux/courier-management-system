@@ -1,0 +1,6 @@
+import React from 'react';
+import { ArrowDown, ArrowUp, GripVertical, MapPin, MoreVertical } from 'lucide-react';
+
+export default function RouteStopList({ stops = [], editable = true, onMove, onSelect }) {
+  return <div className="route-stop-list">{stops.map((stop, index) => <div className="route-stop" key={stop.id || stop.trackingNumber || index} onClick={() => onSelect?.(stop)}><span className="route-stop-number">{index + 1}</span>{editable && <GripVertical className="route-stop-grip" size={15} /> }<div className="route-stop-copy"><strong>{stop.recipient || stop.name}</strong><small><MapPin size={11} />{stop.address || stop.destination}</small>{stop.timeWindow && <em>{stop.timeWindow}</em>}</div><span className="route-stop-meta">{stop.cod || stop.payment || ''}</span>{editable && <span className="route-stop-actions"><button type="button" onClick={(event) => { event.stopPropagation(); onMove?.(index, index - 1); }} disabled={index === 0} aria-label="Move stop up"><ArrowUp size={13} /></button><button type="button" onClick={(event) => { event.stopPropagation(); onMove?.(index, index + 1); }} disabled={index === stops.length - 1} aria-label="Move stop down"><ArrowDown size={13} /></button><MoreVertical size={14} /></span>}</div>)}</div>;
+}

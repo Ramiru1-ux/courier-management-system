@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Customer", { user: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, name: { type: String, required: true, trim: true }, customerCode: { type: String, unique: true, sparse: true }, email: { type: String, lowercase: true, trim: true }, phone: String, addresses: [{ type: mongoose.Schema.Types.ObjectId, ref: "Address" }] }, { indexes: [{ email: 1 }, { phone: 1 }] });

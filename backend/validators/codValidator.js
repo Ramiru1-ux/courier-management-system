@@ -1,0 +1,3 @@
+const { required, number, objectId, oneOf, optionalString, createMiddleware } = require("./validatorHelpers");
+const validateCOD = (body = {}) => ({ shipment: objectId(body.shipment, "shipment"), driver: body.driver ? objectId(body.driver, "driver") : undefined, merchant: body.merchant ? objectId(body.merchant, "merchant") : undefined, amount: number(required(body.amount, "amount"), "amount", { min: 0 }), status: body.status ? oneOf(body.status, "status", ["pending", "collected", "approved", "settled", "failed"]) : undefined, notes: body.notes ? optionalString(body.notes, "notes") : undefined });
+module.exports = { validateCOD, validateCODTransaction: validateCOD, validateCODRequest: createMiddleware(validateCOD) };

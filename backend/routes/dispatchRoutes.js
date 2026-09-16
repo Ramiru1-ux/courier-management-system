@@ -1,0 +1,10 @@
+const express = require("express");
+const controller = require("../controllers/dispatchController");
+const { authenticate } = require("../middleware/authMiddleware");
+const router = express.Router();
+router.use(authenticate);
+router.get("/overview", controller.getDispatchOverview);
+router.get("/", controller.getDispatches);
+router.patch("/:id/assign", controller.assignShipment);
+router.patch("/:id", controller.updateDispatch);
+module.exports = router;

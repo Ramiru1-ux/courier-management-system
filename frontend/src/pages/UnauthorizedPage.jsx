@@ -1,0 +1,6 @@
+import React from 'react';
+import { ArrowLeft, LockKeyhole } from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+const styles = `.fallback-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:#F3F5F9}.fallback-card{width:min(500px,100%);padding:38px 30px;border:1px solid #E3E7EF;border-radius:16px;background:#fff;text-align:center}.fallback-icon{display:grid;place-items:center;width:50px;height:50px;margin:0 auto 16px;border-radius:14px;background:#FDE9E7;color:#B23528}.fallback-title{margin:0;color:#12213F;font:800 26px 'Sora',sans-serif}.fallback-copy{margin:9px auto 20px;color:#697086;font-size:13px;line-height:1.6}.fallback-link{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 15px;background:#12213F;color:#fff;font-size:12px;font-weight:700;text-decoration:none}`;
+export default function UnauthorizedPage(){return <main className="fallback-page"><style>{styles}</style><section className="fallback-card"><div className="fallback-icon"><LockKeyhole size={24}/></div><h1 className="fallback-title">Access restricted</h1><p className="fallback-copy">Your account does not have permission to view this area. Contact an administrator if you need access.</p><Link className="fallback-link" to="/"><ArrowLeft size={14}/> Return to dashboard</Link></section></main>;}

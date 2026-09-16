@@ -1,0 +1,11 @@
+const express = require("express");
+const controller = require("../controllers/reportController");
+const { authenticate } = require("../middleware/authMiddleware");
+const router = express.Router();
+router.use(authenticate);
+router.get("/operational", controller.getOperationalReport);
+router.get("/financial", controller.getFinancialReport);
+router.get("/branch", controller.getBranchReport);
+router.get("/driver", controller.getDriverReport);
+router.get("/merchant", controller.getMerchantReport);
+module.exports = router;

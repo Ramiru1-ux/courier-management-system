@@ -1,0 +1,1 @@
+export default function formatCurrency(value, currency = 'LKR') { const amount=Number(value||0); return new Intl.NumberFormat('en-LK',{style:'currency',currency,maximumFractionDigits:2}).format(amount); }

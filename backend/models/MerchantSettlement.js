@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("MerchantSettlement", { merchant: { type: mongoose.Schema.Types.ObjectId, ref: "Merchant", required: true }, reference: { type: String, unique: true, sparse: true }, amount: { type: Number, min: 0, default: 0 }, periodStart: Date, periodEnd: Date, paidAt: Date, notes: String }, { defaultStatus: "pending", indexes: [{ merchant: 1, createdAt: -1 }] });

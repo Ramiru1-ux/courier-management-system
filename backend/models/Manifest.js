@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Manifest", { manifestNumber: { type: String, unique: true, sparse: true }, branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch" }, driver: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" }, vehicle: { type: mongoose.Schema.Types.ObjectId, ref: "Vehicle" }, items: [{ type: mongoose.Schema.Types.ObjectId, ref: "ManifestItem" }], dispatchedAt: Date, closedAt: Date }, { defaultStatus: "open", indexes: [{ manifestNumber: 1 }, { createdAt: -1 }] });

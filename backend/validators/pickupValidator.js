@@ -1,0 +1,3 @@
+const { required, objectId, optionalString, createMiddleware } = require("./validatorHelpers");
+const validatePickup = (body = {}) => ({ customer: body.customer ? objectId(body.customer, "customer") : undefined, merchant: body.merchant ? objectId(body.merchant, "merchant") : undefined, address: objectId(body.address, "address"), scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined, notes: body.notes ? optionalString(body.notes, "notes") : undefined });
+module.exports = { validatePickup, validateCreatePickup: validatePickup, validatePickupRequest: createMiddleware(validatePickup) };

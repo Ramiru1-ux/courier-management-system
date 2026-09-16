@@ -1,0 +1,52 @@
+const express = require("express");
+
+const routeFiles = {
+	"/addresses": "./addressRoutes",
+	"/app-data": "./appDataRoutes",
+	"/api-keys": "./apiKeyRoutes",
+	"/audit-logs": "./auditLogRoutes",
+	"/auth": "./authRoutes",
+	"/branches": "./branchRoutes",
+	"/cod": "./codRoutes",
+	"/complaints": "./complaintRoutes",
+	"/customers": "./customerRoutes",
+	"/dashboard": "./dashboardRoutes",
+	"/deliveries": "./deliveryRoutes",
+	"/dispatch": "./dispatchRoutes",
+	"/drivers": "./driverRoutes",
+	"/exports": "./exportRoutes",
+	"/geocode": "./geocodeRoutes",
+	"/hubs": "./hubRoutes",
+	"/invoices": "./invoiceRoutes",
+	"/manifests": "./manifestRoutes",
+	"/merchants": "./merchantRoutes",
+	"/notifications": "./notificationRoutes",
+	"/organizations": "./organizationRoutes",
+	"/packages": "./packageRoutes",
+	"/payments": "./paymentRoutes",
+	"/permissions": "./permissionRoutes",
+	"/pickups": "./pickupRoutes",
+	"/pod": "./podRoutes",
+	"/pricing": "./pricingRoutes",
+	"/public-contact": "./publicContactRoutes",
+	"/ratings": "./ratingRoutes",
+	"/reports": "./reportRoutes",
+	"/roles": "./roleRoutes",
+	"/routes": "./routeRoutes",
+	"/search": "./searchRoutes",
+	"/shipments": "./shipmentRoutes",
+	"/settlements": "./settlementRoutes",
+	"/subscriptions": "./subscriptionRoutes",
+	"/system-settings": "./systemSettingRoutes",
+	"/tracking": "./trackingRoutes",
+	"/uploads": "./uploadsRoutes",
+	"/users": "./userRoutes",
+	"/vehicles": "./vehicleRoutes",
+	"/webhooks": "./webhookRoutes",
+	"/zones": "./zoneRoutes",
+};
+
+const router = express.Router();
+for (const [path, file] of Object.entries(routeFiles)) router.use(path, require(file));
+
+module.exports = router;

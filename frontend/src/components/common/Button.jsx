@@ -1,0 +1,8 @@
+import React from 'react';
+import { LoaderCircle } from 'lucide-react';
+
+const styles = `.common-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid transparent;border-radius:10px;padding:10px 14px;font-size:12.5px;font-weight:700;line-height:1.2;cursor:pointer;transition:background .2s,border-color .2s,transform .2s}.common-button:hover:not(:disabled){transform:translateY(-1px)}.common-button:disabled{cursor:not-allowed;opacity:.6}.common-button.primary{background:#12213F;border-color:#12213F;color:#fff}.common-button.secondary{background:#fff;border-color:#E3E7EF;color:#12213F}.common-button.accent{background:#F5A524;border-color:#F5A524;color:#211200}.common-button.danger{background:#EF5B4E;border-color:#EF5B4E;color:#fff}.common-button.ghost{background:transparent;border-color:transparent;color:#2453B8}.common-button.small{padding:7px 10px;font-size:11.5px}.common-button.large{padding:12px 18px;font-size:13px}.common-button-icon{display:inline-flex}.common-button-spinner{animation:common-spin 1s linear infinite}@keyframes common-spin{to{transform:rotate(360deg)}}`;
+
+export default function Button({ children, variant = 'primary', size = 'medium', icon: Icon, loading = false, className = '', disabled, type = 'button', ...props }) {
+	return <button type={type} className={`common-button ${variant} ${size === 'small' ? 'small' : size === 'large' ? 'large' : ''} ${className}`.trim()} disabled={disabled || loading} {...props}><style>{styles}</style>{loading ? <LoaderCircle size={15} className="common-button-spinner" /> : Icon ? <span className="common-button-icon"><Icon size={15} /></span> : null}{loading ? 'Processing...' : children}</button>;
+}

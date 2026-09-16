@@ -1,0 +1,17 @@
+const express = require("express");
+const driverController = require("../controllers/driverSettlementController");
+const merchantController = require("../controllers/merchantSettlementController");
+const { authenticate } = require("../middleware/authMiddleware");
+const router = express.Router();
+router.use(authenticate);
+router.get("/drivers", driverController.getDriverSettlements);
+router.post("/drivers", driverController.createDriverSettlement);
+router.get("/drivers/:id", driverController.getDriverSettlementById);
+router.patch("/drivers/:id", driverController.updateDriverSettlement);
+router.delete("/drivers/:id", driverController.deleteDriverSettlement);
+router.get("/merchants", merchantController.getMerchantSettlements);
+router.post("/merchants", merchantController.createMerchantSettlement);
+router.get("/merchants/:id", merchantController.getMerchantSettlementById);
+router.patch("/merchants/:id", merchantController.updateMerchantSettlement);
+router.delete("/merchants/:id", merchantController.deleteMerchantSettlement);
+module.exports = router;

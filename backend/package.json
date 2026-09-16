@@ -1,0 +1,35 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Courier Management System backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node scripts/seedUsers.js",
+    "dev": "nodemon server.js",
+    "check": "node --check app.js && node --check server.js",
+    "validate": "node -e \"const fs=require('fs'); const folders=['config','controllers','jobs','middleware','models','routes','services','sockets','utils','validators']; for(const folder of folders){for(const file of fs.readdirSync(folder).filter(name=>name.endsWith('.js'))){require('./'+folder+'/'+file)}} console.log('Backend modules validated')\"",
+    "test": "npm run check && npm run validate"
+  },
+  "keywords": ["courier", "delivery", "logistics", "express", "mongodb"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.9.4",
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.9",
+    "socket.io": "^4.8.3",
+    "stripe": "^22.6.2",
+    "twilio": "^6.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

@@ -1,0 +1,5 @@
+const { required, email, phone, optionalString, oneOf, createMiddleware } = require("./validatorHelpers");
+const roles = ["super_admin", "admin", "manager", "dispatcher", "driver", "customer", "support", "accountant"];
+const validateCreateUser = (body = {}) => ({ name: optionalString(required(body.name, "name"), "name", 120), email: email(body.email), phone: body.phone ? phone(body.phone) : undefined, password: required(body.password, "password"), role: oneOf(body.role || "customer", "role", roles) });
+const validateUpdateUser = (body = {}) => { const result = {}; if (body.name !== undefined) result.name = optionalString(body.name, "name", 120); if (body.email !== undefined) result.email = email(body.email); if (body.phone !== undefined) result.phone = phone(body.phone); if (body.role !== undefined) result.role = oneOf(body.role, "role", roles); if (body.password !== undefined) result.password = required(body.password, "password"); return result; };
+module.exports = { validateCreateUser, validateUpdateUser, validateCreateUserRequest: createMiddleware(validateCreateUser), validateUpdateUserRequest: createMiddleware(validateUpdateUser) };

@@ -1,0 +1,511 @@
+.
+|____FOLDER_TREE.txt
+|____frontend
+| |____tailwind.config.js
+| |____src
+| | |____components
+| | | |____manifest
+| | | | |____ManifestForm.jsx
+| | | | |____ManifestScanPanel.jsx
+| | | | |____ManifestList.jsx
+| | | |____admin
+| | | | |____UserForm.jsx
+| | | | |____BranchForm.jsx
+| | | | |____PermissionMatrix.jsx
+| | | | |____AuditLogTable.jsx
+| | | | |____RoleForm.jsx
+| | | | |____SubscriptionPlanForm.jsx
+| | | |____auth
+| | | | |____LoginForm.jsx
+| | | | |____ForgotPasswordForm.jsx
+| | | | |____TwoFactorForm.jsx
+| | | | |____ResetPasswordForm.jsx
+| | | | |____RegisterForm.jsx
+| | | |____route
+| | | | |____LiveDriverMap.jsx
+| | | | |____RouteMap.jsx
+| | | | |____RouteOptimizerPanel.jsx
+| | | | |____RouteStopList.jsx
+| | | |____delivery
+| | | | |____FailedDeliveryForm.jsx
+| | | | |____DeliveryConfirmationForm.jsx
+| | | | |____DeliveryAssignmentPanel.jsx
+| | | | |____RTOPanel.jsx
+| | | |____driver
+| | | | |____DriverCard.jsx
+| | | | |____DriverPerformanceChart.jsx
+| | | | |____DriverAvailabilityBadge.jsx
+| | | | |____DriverAssignmentModal.jsx
+| | | |____shipment
+| | | | |____ShipmentStatusBadge.jsx
+| | | | |____BarcodeScanner.jsx
+| | | | |____PackageList.jsx
+| | | | |____ShipmentTimeline.jsx
+| | | | |____BulkUploadForm.jsx
+| | | | |____WaybillPrint.jsx
+| | | | |____ShipmentTable.jsx
+| | | | |____ShipmentForm.jsx
+| | | |____pickup
+| | | | |____PickupRequestForm.jsx
+| | | | |____PickupList.jsx
+| | | |____common
+| | | | |____EmptyState.jsx
+| | | | |____Pagination.jsx
+| | | | |____Modal.jsx
+| | | | |____Table.jsx
+| | | | |____Button.jsx
+| | | | |____SearchBar.jsx
+| | | | |____FilterPanel.jsx
+| | | | |____Loader.jsx
+| | | | |____ExportButton.jsx
+| | | | |____KpiCard.jsx
+| | | | |____StatusBadge.jsx
+| | | | |____ConfirmDialog.jsx
+| | | |____layout
+| | | | |____DashboardLayout.jsx
+| | | | |____Navbar.jsx
+| | | | |____PortalLayout.jsx
+| | | | |____Sidebar.jsx
+| | | |____notifications
+| | | | |____TemplateEditor.jsx
+| | | | |____NotificationBell.jsx
+| | | |____pod
+| | | | |____SignaturePad.jsx
+| | | | |____PhotoCapture.jsx
+| | | | |____OTPInput.jsx
+| | | |____support
+| | | | |____TicketThread.jsx
+| | | | |____RatingStars.jsx
+| | | | |____TicketForm.jsx
+| | | | |____ComplaintForm.jsx
+| | | |____tracking
+| | | | |____TrackingTimeline.jsx
+| | | | |____TrackingMap.jsx
+| | | | |____TrackingSearchBox.jsx
+| | | |____vehicle
+| | | | |____VehicleMaintenanceForm.jsx
+| | | | |____VehicleCard.jsx
+| | | |____reports
+| | | | |____ReportChart.jsx
+| | | | |____KpiDashboard.jsx
+| | | |____dashboard
+| | | | |____AlertsPanel.jsx
+| | | | |____LiveMapWidget.jsx
+| | | |____pricing
+| | | | |____PricingRuleForm.jsx
+| | | | |____ServiceabilityChecker.jsx
+| | | | |____ZoneForm.jsx
+| | | |____cod
+| | | | |____SettlementSummary.jsx
+| | | | |____ReconciliationTable.jsx
+| | | | |____CODSummaryCard.jsx
+| | |____hooks
+| | | |____useTracking.js
+| | | |____useFetch.js
+| | | |____useSocket.js
+| | | |____useDebounce.js
+| | | |____usePermissions.js
+| | | |____useAuth.js
+| | | |____usePagination.js
+| | |____App.jsx
+| | |____assets
+| | | |____images
+| | | | |____.gitkeep
+| | | |____styles
+| | | | |____index.css
+| | | |____icons
+| | | | |____.gitkeep
+| | |____api
+| | | |____codApi.js
+| | | |____customerApi.js
+| | | |____permissionApi.js
+| | | |____searchApi.js
+| | | |____authApi.js
+| | | |____podApi.js
+| | | |____reportApi.js
+| | | |____merchantApi.js
+| | | |____paymentApi.js
+| | | |____supportApi.js
+| | | |____userApi.js
+| | | |____dispatchApi.js
+| | | |____auditLogApi.js
+| | | |____vehicleApi.js
+| | | |____zoneApi.js
+| | | |____organizationApi.js
+| | | |____driverApi.js
+| | | |____apiKeyApi.js
+| | | |____hubApi.js
+| | | |____roleApi.js
+| | | |____pickupApi.js
+| | | |____branchApi.js
+| | | |____systemSettingApi.js
+| | | |____packageApi.js
+| | | |____addressApi.js
+| | | |____exportApi.js
+| | | |____pricingApi.js
+| | | |____webhookApi.js
+| | | |____trackingApi.js
+| | | |____manifestApi.js
+| | | |____ratingApi.js
+| | | |____routeApi.js
+| | | |____shipmentApi.js
+| | | |____complaintApi.js
+| | | |____deliveryApi.js
+| | | |____subscriptionApi.js
+| | | |____axiosInstance.js
+| | | |____invoiceApi.js
+| | | |____dashboardApi.js
+| | | |____notificationApi.js
+| | | |____settlementApi.js
+| | |____index.js
+| | |____utils
+| | | |____statusColors.js
+| | | |____constants.js
+| | | |____formatCurrency.js
+| | | |____formatDate.js
+| | | |____validators.js
+| | |____pages
+| | | |____customer
+| | | | |____ProfilePage.jsx
+| | | | |____PaymentsPage.jsx
+| | | | |____CustomerDashboardPage.jsx
+| | | | |____ShipmentHistoryPage.jsx
+| | | | |____CreateShipmentPage.jsx
+| | | | |____SupportPage.jsx
+| | | | |____ComplaintsPage.jsx
+| | | | |____TrackShipmentPage.jsx
+| | | |____admin
+| | | | |____HubsPage.jsx
+| | | | |____SystemSettingsPage.jsx
+| | | | |____BranchesPage.jsx
+| | | | |____AdminDashboardPage.jsx
+| | | | |____RolesPage.jsx
+| | | | |____UsersPage.jsx
+| | | | |____PermissionsPage.jsx
+| | | | |____SubscriptionsPage.jsx
+| | | | |____AuditLogsPage.jsx
+| | | | |____ApiKeysPage.jsx
+| | | | |____OrganizationsPage.jsx
+| | | | |____WebhooksPage.jsx
+| | | |____auth
+| | | | |____ForgotPasswordPage.jsx
+| | | | |____LoginPage.jsx
+| | | | |____ResetPasswordPage.jsx
+| | | |____public
+| | | | |____PublicTrackingPage.jsx
+| | | | |____ContactSupportPage.jsx
+| | | | |____HomePage.jsx
+| | | |____driver
+| | | | |____FailedDeliveryPage.jsx
+| | | | |____DeliveryConfirmationPage.jsx
+| | | | |____MyDeliveriesPage.jsx
+| | | | |____DailyCollectionPage.jsx
+| | | | |____RouteViewPage.jsx
+| | | | |____DriverDashboardPage.jsx
+| | | | |____CodCollectionPage.jsx
+| | | | |____PodCapturePage.jsx
+| | | |____finance
+| | | | |____FinancialReportsPage.jsx
+| | | | |____CodManagementPage.jsx
+| | | | |____DriverReconciliationPage.jsx
+| | | | |____MerchantSettlementsPage.jsx
+| | | | |____PaymentsPage.jsx
+| | | | |____RefundsPage.jsx
+| | | | |____InvoicesPage.jsx
+| | | |____settings
+| | | | |____PricingSettingsPage.jsx
+| | | | |____ProfileSettingsPage.jsx
+| | | | |____NotificationTemplatesPage.jsx
+| | | | |____ZoneSettingsPage.jsx
+| | | |____dispatcher
+| | | | |____AssignDriverPage.jsx
+| | | | |____RouteOptimizerPage.jsx
+| | | | |____ActiveDriversPage.jsx
+| | | | |____PendingDeliveriesPage.jsx
+| | | |____branch
+| | | | |____BranchReportsPage.jsx
+| | | | |____BranchStaffPage.jsx
+| | | | |____BranchShipmentsPage.jsx
+| | | | |____BranchDashboardPage.jsx
+| | | | |____BranchInventoryPage.jsx
+| | | |____UnauthorizedPage.jsx
+| | | |____counter
+| | | | |____PrintLabelPage.jsx
+| | | | |____SearchShipmentPage.jsx
+| | | | |____PickupRequestPage.jsx
+| | | | |____AcceptPaymentPage.jsx
+| | | | |____CreateShipmentPage.jsx
+| | | |____support
+| | | | |____TicketDetailPage.jsx
+| | | | |____TicketsPage.jsx
+| | | | |____ComplaintsPage.jsx
+| | | |____operations
+| | | | |____ShipmentsPage.jsx
+| | | | |____FailedDeliveriesPage.jsx
+| | | | |____DamagedShipmentsPage.jsx
+| | | | |____RoutesPage.jsx
+| | | | |____LostShipmentsPage.jsx
+| | | | |____OperationsDashboardPage.jsx
+| | | | |____DispatchPage.jsx
+| | | | |____PickupsPage.jsx
+| | | | |____ManifestsPage.jsx
+| | | | |____LiveTrackingPage.jsx
+| | | | |____RTOPage.jsx
+| | | |____merchant
+| | | | |____ApiCredentialsPage.jsx
+| | | | |____TrackShipmentsPage.jsx
+| | | | |____MerchantDashboardPage.jsx
+| | | | |____MerchantUsersPage.jsx
+| | | | |____AddressesPage.jsx
+| | | | |____CreateShipmentPage.jsx
+| | | | |____ReportsPage.jsx
+| | | | |____BulkUploadPage.jsx
+| | | | |____InvoicesPage.jsx
+| | | | |____SettlementsPage.jsx
+| | | |____reports
+| | | | |____FinancialReportsPage.jsx
+| | | | |____BranchReportsPage.jsx
+| | | | |____DriverReportsPage.jsx
+| | | | |____MerchantReportsPage.jsx
+| | | | |____OperationalReportsPage.jsx
+| | | |____NotFoundPage.jsx
+| | |____routes
+| | | |____AppRoutes.jsx
+| | | |____RoleBasedRoute.jsx
+| | | |____PrivateRoute.jsx
+| | |____context
+| | | |____BranchContext.js
+| | | |____AuthContext.js
+| | | |____NotificationContext.js
+| | | |____SocketContext.js
+| | | |____OrganizationContext.js
+| | | |____ThemeContext.js
+| | | |____PermissionContext.js
+| |____public
+| | |____index.html
+| | |____manifest.json
+| |____.gitignore
+| |____package.json
+| |____.env.example
+|____backend
+| |____controllers
+| | |____reportController.js
+| | |____roleController.js
+| | |____searchController.js
+| | |____customerController.js
+| | |____notificationController.js
+| | |____driverController.js
+| | |____systemSettingController.js
+| | |____subscriptionController.js
+| | |____auditLogController.js
+| | |____zoneController.js
+| | |____dispatchController.js
+| | |____userController.js
+| | |____hubController.js
+| | |____paymentController.js
+| | |____complaintController.js
+| | |____driverSettlementController.js
+| | |____apiKeyController.js
+| | |____packageController.js
+| | |____permissionController.js
+| | |____vehicleController.js
+| | |____routeController.js
+| | |____webhookController.js
+| | |____podController.js
+| | |____addressController.js
+| | |____shipmentController.js
+| | |____deliveryAttemptController.js
+| | |____notificationTemplateController.js
+| | |____shipmentEventController.js
+| | |____authController.js
+| | |____pickupController.js
+| | |____deliveryController.js
+| | |____merchantSettlementController.js
+| | |____organizationController.js
+| | |____invoiceController.js
+| | |____trackingController.js
+| | |____vehicleMaintenanceController.js
+| | |____branchController.js
+| | |____pricingController.js
+| | |____ratingController.js
+| | |____supportTicketController.js
+| | |____dashboardController.js
+| | |____exportController.js
+| | |____merchantController.js
+| | |____codController.js
+| | |____manifestController.js     
+| |____jobs
+| | |____vehicleMaintenanceReminderJob.js
+| | |____retryFailedDeliveriesJob.js
+| | |____subscriptionExpiryCheckJob.js
+| | |____dailySettlementJob.js
+| | |____documentExpiryReminderJob.js
+| |____config
+| | |____db.js
+| | |____emailConfig.js
+| | |____mapsConfig.js
+| | |____cloudinaryConfig.js
+| | |____paymentGatewayConfig.js
+| | |____constants.js
+| | |____smsConfig.js
+| | |____env.js
+| | |____socketConfig.js
+| | |____whatsappConfig.js
+| | |____multerConfig.js
+| |____middleware
+| | |____errorMiddleware.js
+| | |____branchScope.js
+| | |____organizationScope.js
+| | |____roleMiddleware.js
+| | |____uploadMiddleware.js
+| | |____authMiddleware.js
+| | |____validateRequest.js
+| | |____rateLimiter.js
+| | |____apiKeyAuth.js
+| | |____notFound.js
+| | |____permissionMiddleware.js
+| | |____auditLogger.js
+| |____services
+| | |____emailService.js
+| | |____paymentService.js
+| | |____serviceabilityService.js
+| | |____routeOptimizationService.js
+| | |____pdfGenerationService.js
+| | |____merchantSettlementService.js
+| | |____fraudDetectionService.js
+| | |____whatsappService.js
+| | |____qrCodeService.js
+| | |____invoiceGenerationService.js
+| | |____barcodeService.js
+| | |____notificationService.js
+| | |____smsService.js
+| | |____webhookDispatchService.js
+| | |____demandForecastService.js
+| | |____fileUploadService.js
+| | |____codReconciliationService.js
+| | |____pricingEngineService.js
+| | |____deliveryDelayPredictionService.js
+| | |____gpsTrackingService.js
+| | |____exportService.js
+| | |____trackingNumberService.js
+| | |____statusEngineService.js
+| |____sockets
+| | |____gpsSocket.js
+| | |____trackingSocket.js
+| | |____notificationSocket.js
+| | |____socketServer.js
+| |____app.js
+| |____.gitignore
+| |____validators
+| | |____authValidator.js
+| | |____driverValidator.js
+| | |____userValidator.js
+| | |____codValidator.js
+| | |____paymentValidator.js
+| | |____vehicleValidator.js
+| | |____pickupValidator.js
+| | |____shipmentValidator.js
+| | |____pricingValidator.js
+| |____uploads
+| | |____.gitkeep
+| |____models
+| | |____Merchant.js
+| | |____ServiceZone.js
+| | |____ProofOfDelivery.js
+| | |____Delivery.js
+| | |____CODTransaction.js
+| | |____Address.js
+| | |____ManifestItem.js
+| | |____Branch.js
+| | |____User.js
+| | |____Payment.js
+| | |____Package.js
+| | |____Shipment.js
+| | |____DeliveryAttempt.js
+| | |____Role.js
+| | |____MerchantSettlement.js
+| | |____Invoice.js
+| | |____RouteStop.js
+| | |____Manifest.js
+| | |____Subscription.js
+| | |____NotificationTemplate.js
+| | |____ApiKey.js
+| | |____SupportTicket.js
+| | |____SystemSetting.js
+| | |____Notification.js
+| | |____DriverSettlement.js
+| | |____Hub.js
+| | |____ShipmentEvent.js
+| | |____Permission.js
+| | |____Customer.js
+| | |____Route.js
+| | |____Pickup.js
+| | |____Complaint.js
+| | |____PricingRule.js
+| | |____AuditLog.js
+| | |____Organization.js
+| | |____VehicleMaintenance.js
+| | |____Webhook.js
+| | |____Vehicle.js
+| | |____Rating.js
+| | |____Driver.js
+| | |____SubscriptionPlan.js
+| |____tests
+| | |____integration
+| | | |____.gitkeep
+| | |____unit
+| | | |____.gitkeep
+| |____package.json
+| |____.env.example
+| |____server.js
+| |____utils
+| | |____logger.js
+| | |____constants.js
+| | |____generateToken.js
+| | |____apiFeatures.js
+| | |____hashPassword.js
+| | |____dateHelpers.js
+| | |____responseHandler.js
+| |____routes
+| | |____userRoutes.js
+| | |____notificationRoutes.js
+| | |____driverRoutes.js
+| | |____subscriptionRoutes.js
+| | |____settlementRoutes.js
+| | |____authRoutes.js
+| | |____complaintRoutes.js
+| | |____deliveryRoutes.js
+| | |____webhookRoutes.js
+| | |____dispatchRoutes.js
+| | |____pricingRoutes.js
+| | |____organizationRoutes.js
+| | |____pickupRoutes.js
+| | |____merchantRoutes.js
+| | |____invoiceRoutes.js
+| | |____auditLogRoutes.js
+| | |____roleRoutes.js
+| | |____branchRoutes.js
+| | |____apiKeyRoutes.js
+| | |____exportRoutes.js
+| | |____vehicleRoutes.js
+| | |____codRoutes.js
+| | |____addressRoutes.js
+| | |____trackingRoutes.js
+| | |____permissionRoutes.js
+| | |____packageRoutes.js
+| | |____customerRoutes.js
+| | |____zoneRoutes.js
+| | |____manifestRoutes.js
+| | |____ratingRoutes.js
+| | |____dashboardRoutes.js
+| | |____index.js
+| | |____systemSettingRoutes.js
+| | |____searchRoutes.js
+| | |____shipmentRoutes.js
+| | |____routeRoutes.js
+| | |____podRoutes.js
+| | |____hubRoutes.js
+| | |____paymentRoutes.js
+| | |____supportRoutes.js
+| | |____reportRoutes.js
+|____README.md

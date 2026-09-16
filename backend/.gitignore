@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Logs and runtime output
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Uploaded files and generated user content
+uploads/*
+!uploads/.gitkeep
+
+# Test and coverage output
+coverage/
+.nyc_output/
+test-results/
+
+# Build and temporary output
+dist/
+build/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Local databases and cache files
+*.sqlite
+*.sqlite3
+*.db
+.cache/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

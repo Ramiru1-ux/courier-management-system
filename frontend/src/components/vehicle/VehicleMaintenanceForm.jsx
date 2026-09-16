@@ -1,0 +1,11 @@
+import React, { useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
+
+export default function VehicleMaintenanceForm({ open, vehicle, onClose, onSubmit }) {
+  const [form, setForm] = useState({ type: 'Routine service', date: '2026-09-08', mileage: vehicle?.mileage || '', cost: '', notes: '' });
+  if (!open) return null;
+  const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const submit = (event) => { event.preventDefault(); onSubmit?.({ vehicle, ...form }); };
+  return <div className="vehicle-modal-backdrop" role="presentation" onClick={onClose}><form className="vehicle-maintenance-form" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()} onSubmit={submit}><button className="vehicle-close" type="button" onClick={onClose} aria-label="Close"><X size={17} /></button><span className="vehicle-eyebrow">Fleet maintenance</span><h2>Record service</h2><p>{vehicle?.registration || vehicle?.id || 'Vehicle'} · Add a maintenance record.</p><Field label="Maintenance type" name="type" value={form.type} onChange={update} options={['Routine service', 'Repair', 'Tyre replacement', 'Inspection', 'Other']} /><label className="vehicle-field">Service date<input type="date" name="date" value={form.date} onChange={update} required /></label><div className="vehicle-form-grid"><label className="vehicle-field">Mileage<input name="mileage" type="number" min="0" value={form.mileage} onChange={update} placeholder="Current mileage" required /></label><label className="vehicle-field">Cost (Rs)<input name="cost" type="number" min="0" value={form.cost} onChange={update} placeholder="Optional" /></label></div><label className="vehicle-field">Notes<textarea name="notes" rows="3" value={form.notes} onChange={update} placeholder="Work completed or follow-up needed" /></label><div className="vehicle-form-actions"><button className="vehicle-cancel" type="button" onClick={onClose}>Cancel</button><button className="vehicle-submit" type="submit">Save record</button></div></form></div>;
+}
+function Field({ label, name, value, onChange, options }) { return <label className="vehicle-field">{label}<span><select name={name} value={value} onChange={onChange}>{options.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={14} /></span></label>; }

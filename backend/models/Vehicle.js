@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Vehicle", { registrationNumber: { type: String, required: true, unique: true }, vehicleNumber: String, type: String, make: String, model: String, year: Number, driver: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" }, capacity: Number, lastServiceDate: Date, nextServiceDate: Date }, { indexes: [{ registrationNumber: 1 }, { status: 1 }] });

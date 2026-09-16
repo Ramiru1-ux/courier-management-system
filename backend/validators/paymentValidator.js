@@ -1,0 +1,3 @@
+const { required, number, oneOf, objectId, optionalString, createMiddleware } = require("./validatorHelpers");
+const validatePayment = (body = {}) => ({ shipment: body.shipment ? objectId(body.shipment, "shipment") : undefined, amount: number(required(body.amount, "amount"), "amount", { min: 0 }), currency: (body.currency || "LKR").toUpperCase(), method: oneOf(body.method || "cash", "method", ["cash", "card", "bank_transfer", "mobile_money", "wallet", "cod"]), reference: body.reference ? optionalString(body.reference, "reference", 120) : undefined });
+module.exports = { validatePayment, validateCreatePayment: validatePayment, validatePaymentRequest: createMiddleware(validatePayment) };

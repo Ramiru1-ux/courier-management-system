@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Complaint", { customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer" }, shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment" }, subject: { type: String, required: true }, description: { type: String, required: true }, assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, resolution: String, resolvedAt: Date }, { defaultStatus: "open", indexes: [{ status: 1 }, { createdAt: -1 }] });

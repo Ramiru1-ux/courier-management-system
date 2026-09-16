@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("ShipmentEvent", { shipment: { type: mongoose.Schema.Types.ObjectId, ref: "Shipment", required: true, index: true }, eventType: String, status: String, description: String, location: { latitude: Number, longitude: Number }, createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" } }, { defaultStatus: "recorded", indexes: [{ shipment: 1, createdAt: -1 }] });

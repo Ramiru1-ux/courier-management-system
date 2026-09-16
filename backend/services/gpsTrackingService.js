@@ -1,0 +1,4 @@
+const { toNumber } = require("../utils/serviceHelpers");
+const validateLocation = ({ latitude, longitude }) => Number.isFinite(Number(latitude)) && Number(latitude) >= -90 && Number(latitude) <= 90 && Number.isFinite(Number(longitude)) && Number(longitude) >= -180 && Number(longitude) <= 180;
+const calculateDistance = (a, b) => { const R = 6371; const p = Math.PI / 180; const x = (toNumber(b.latitude) - toNumber(a.latitude)) * p; const y = (toNumber(b.longitude) - toNumber(a.longitude)) * p; const h = Math.sin(x / 2) ** 2 + Math.cos(toNumber(a.latitude) * p) * Math.cos(toNumber(b.latitude) * p) * Math.sin(y / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)); };
+module.exports = { validateLocation, calculateDistance, updateLocation: (location) => { if (!validateLocation(location)) throw new Error("Invalid GPS coordinates"); return { ...location, updatedAt: new Date() }; } };

@@ -1,0 +1,2 @@
+const { createModel } = require("../utils/modelFactory");
+module.exports = createModel("PricingRule", { name: { type: String, required: true }, serviceType: String, zone: String, basePrice: { type: Number, min: 0, default: 0 }, pricePerKg: { type: Number, min: 0, default: 0 }, pricePerKm: { type: Number, min: 0, default: 0 }, effectiveFrom: Date, effectiveTo: Date }, { indexes: [{ serviceType: 1 }, { zone: 1 }] });

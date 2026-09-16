@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Subscription", { organization: { type: mongoose.Schema.Types.ObjectId, ref: "Organization", required: true }, plan: { type: mongoose.Schema.Types.ObjectId, ref: "SubscriptionPlan" }, startDate: { type: Date, default: Date.now }, endDate: Date, cancelledAt: Date, autoRenew: { type: Boolean, default: true } }, { defaultStatus: "active", indexes: [{ status: 1, endDate: 1 }] });

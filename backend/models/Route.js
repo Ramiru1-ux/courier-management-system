@@ -1,0 +1,2 @@
+const { createModel, mongoose } = require("../utils/modelFactory");
+module.exports = createModel("Route", { routeNumber: { type: String, unique: true, sparse: true }, name: String, driver: { type: mongoose.Schema.Types.ObjectId, ref: "Driver" }, vehicle: { type: mongoose.Schema.Types.ObjectId, ref: "Vehicle" }, stops: [{ type: mongoose.Schema.Types.ObjectId, ref: "RouteStop" }], distance: Number, duration: Number, startedAt: Date, completedAt: Date }, { defaultStatus: "planned", indexes: [{ routeNumber: 1 }, { driver: 1 }] });
