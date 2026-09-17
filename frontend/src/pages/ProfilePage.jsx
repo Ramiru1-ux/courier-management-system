@@ -149,7 +149,7 @@ export default function ProfilePage() {
 							<input value={name} onChange={(e) => setName(e.target.value)} style={{ ...inputStyle, marginBottom: 16 }} />
 
 							<label style={labelStyle}>Phone number</label>
-							<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 077 123 4567" style={{ ...inputStyle, marginBottom: 20 }} />
+							<input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="e.g. 0771234567" inputMode="numeric" maxLength={10} style={{ ...inputStyle, marginBottom: 20 }} />
 
 							<Button type="submit" variant="accent" icon={Save} disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</Button>
 						</form>
