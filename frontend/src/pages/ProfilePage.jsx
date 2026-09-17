@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Info, Languages, Monitor, Moon, Save, ShieldCheck, Sun, UserRound } from 'lucide-react';
+import { Info, Moon, Save, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import PortalLayout from '../components/layout/PortalLayout';
 import Button from '../components/common/Button';
 import useAuth from '../hooks/useAuth';
@@ -12,9 +12,7 @@ const ROLE_LABELS = { admin: 'Admin', finance: 'Finance', dispatcher: 'Dispatche
 // localStorage key in ThemeContext.js). Nothing here calls a backend
 // endpoint or touches MongoDB - see the component doc comment below for why.
 const NOTIFICATION_PREFS_KEY = 'cms_notification_prefs';
-const DATETIME_PREFS_KEY = 'cms_datetime_prefs';
 const DEFAULT_NOTIFICATION_PREFS = { notifications: true, shipmentUpdates: true, assignmentUpdates: true, financeUpdates: true, complaintUpdates: true };
-const DEFAULT_DATETIME_PREFS = { timeZone: 'Asia/Colombo', dateFormat: 'DD/MM/YYYY', timeFormat: '12-hour' };
 
 function loadPrefs(key, defaults) {
 	try {
@@ -56,14 +54,12 @@ function ToggleSwitch({ checked, onChange, dark }) {
  *   mode; the rest of the application's pages keep their current light
  *   card styling either way - retrofitting every existing page's styling
  *   was out of scope for a zero-regression change.
- * - Notifications, Date & Time, Language: there is no existing backend
- *   mechanism for per-user notification/locale preferences, and adding one
- *   was explicitly out of scope for this pass. These are honestly
- *   frontend-only, per-browser preferences (localStorage) - not sent to
- *   the server, not stored in MongoDB, and not wired to change how the
- *   rest of the app actually behaves (e.g. selecting "24-hour" here does
- *   not reformat dates shown elsewhere). They exist so a user's stated UI
- *   preference survives a refresh on the same device, nothing more.
+ * - Notifications: there is no existing backend mechanism for per-user
+ *   notification preferences, and adding one was explicitly out of scope
+ *   for this pass. This is honestly a frontend-only, per-browser preference
+ *   (localStorage) - not sent to the server, not stored in MongoDB. It
+ *   exists so a user's stated UI preference survives a refresh on the same
+ *   device, nothing more.
  */
 export default function ProfilePage() {
 	const { user, updateProfile } = useAuth();
@@ -72,10 +68,8 @@ export default function ProfilePage() {
 	const [phone, setPhone] = useState(user?.phone || '');
 	const [saving, setSaving] = useState(false);
 	const [notificationPrefs, setNotificationPrefs] = useState(() => loadPrefs(NOTIFICATION_PREFS_KEY, DEFAULT_NOTIFICATION_PREFS));
-	const [dateTimePrefs, setDateTimePrefs] = useState(() => loadPrefs(DATETIME_PREFS_KEY, DEFAULT_DATETIME_PREFS));
 
 	useEffect(() => { localStorage.setItem(NOTIFICATION_PREFS_KEY, JSON.stringify(notificationPrefs)); }, [notificationPrefs]);
-	useEffect(() => { localStorage.setItem(DATETIME_PREFS_KEY, JSON.stringify(dateTimePrefs)); }, [dateTimePrefs]);
 
 	const dark = resolvedTheme === 'dark';
 	const palette = {
@@ -120,8 +114,11 @@ export default function ProfilePage() {
 		}
 	};
 
-	const toggleNotification = (key) => setNotificationPrefs((current) => ({ ...current, [key]: !current[key] }));
-	const updateDateTimePref = (key, value) => setDateTimePrefs((current) => ({ ...current, [key]: value }));
+	const toggleNotification = (key, label) => {
+		const next = !notificationPrefs[key];
+		setNotificationPrefs((current) => ({ ...current, [key]: next }));
+		toast.success(`${label} ${next ? 'enabled' : 'disabled'}`);
+	};
 
 	return (
 		<PortalLayout>
@@ -180,7 +177,6 @@ export default function ProfilePage() {
 						{[
 							{ value: 'light', label: 'Light', icon: Sun },
 							{ value: 'dark', label: 'Dark', icon: Moon },
-							{ value: 'system', label: 'System Default', icon: Monitor },
 						].map((option) => {
 							const isCurrent = theme === option.value;
 							const Icon = option.icon;
@@ -219,48 +215,10 @@ export default function ProfilePage() {
 						].map(([key, label]) => (
 							<div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 2px', borderBottom: `1px solid ${palette.rowBorder}` }}>
 								<span style={{ fontSize: 13, color: palette.text }}>{label}</span>
-								<ToggleSwitch checked={Boolean(notificationPrefs[key])} onChange={() => toggleNotification(key)} dark={dark} />
+								<ToggleSwitch checked={Boolean(notificationPrefs[key])} onChange={() => toggleNotification(key, label)} dark={dark} />
 							</div>
 						))}
 					</div>
-				</div>
-
-				{/* DATE & TIME */}
-				<div style={cardStyle}>
-					<div style={sectionTitleStyle}>Date & Time</div>
-					<div style={sectionSubStyle}>Your preferred display format on this device.</div>
-					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-						<div>
-							<label style={labelStyle}>Time Zone</label>
-							<select value={dateTimePrefs.timeZone} onChange={(e) => updateDateTimePref('timeZone', e.target.value)} style={inputStyle}>
-								<option value="Asia/Colombo">Asia/Colombo</option>
-							</select>
-						</div>
-						<div>
-							<label style={labelStyle}>Date Format</label>
-							<select value={dateTimePrefs.dateFormat} onChange={(e) => updateDateTimePref('dateFormat', e.target.value)} style={inputStyle}>
-								<option value="DD/MM/YYYY">DD/MM/YYYY</option>
-								<option value="MM/DD/YYYY">MM/DD/YYYY</option>
-								<option value="YYYY-MM-DD">YYYY-MM-DD</option>
-							</select>
-						</div>
-						<div>
-							<label style={labelStyle}>Time Format</label>
-							<select value={dateTimePrefs.timeFormat} onChange={(e) => updateDateTimePref('timeFormat', e.target.value)} style={inputStyle}>
-								<option value="12-hour">12-hour</option>
-								<option value="24-hour">24-hour</option>
-							</select>
-						</div>
-					</div>
-				</div>
-
-				{/* LANGUAGE */}
-				<div style={cardStyle}>
-					<div style={{ ...sectionTitleStyle, display: 'flex', alignItems: 'center', gap: 8 }}><Languages size={15} /> Language</div>
-					<div style={sectionSubStyle}>English is currently the only supported language.</div>
-					<select value="English" disabled style={{ ...inputStyle, maxWidth: 220, opacity: 0.7, cursor: 'not-allowed' }}>
-						<option>English</option>
-					</select>
 				</div>
 
 				{/* ABOUT */}
@@ -277,7 +235,7 @@ export default function ProfilePage() {
 						</div>
 						<div style={{ display: 'flex', justifyContent: 'space-between' }}>
 							<span style={{ fontSize: 11.5, color: palette.textFaint }}>Support</span>
-							<strong style={{ fontSize: 12.5, color: palette.text, textAlign: 'right' }}>support@egotech.com · +94 11 234 5678</strong>
+							<strong style={{ fontSize: 12.5, color: palette.text, textAlign: 'right' }}>info@egotechworld.com · +94 74 312 6123 · +01 234 567 89</strong>
 						</div>
 					</div>
 				</div>

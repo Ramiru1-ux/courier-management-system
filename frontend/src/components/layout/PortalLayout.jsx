@@ -56,8 +56,6 @@ const SECTIONS = [
       { to: '/admin/audit-logs', label: 'Audit Logs', icon: ShieldCheck },
       { to: '/admin/api-keys', label: 'API Keys', icon: KeyRound },
       { to: '/admin/webhooks', label: 'Webhooks', icon: Send },
-      { to: '/admin/settings', label: 'System Configuration', icon: ClipboardList },
-      { to: '/profile', label: 'Settings', icon: Settings },
     ],
   },
   {

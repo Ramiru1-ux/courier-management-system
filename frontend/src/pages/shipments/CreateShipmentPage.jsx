@@ -44,6 +44,15 @@ export default function CreateShipmentPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Sri Lankan phone numbers are 10 digits (e.g. 0771234567) - strip
+  // anything non-numeric as the user types and cap the length so the field
+  // can't end up with letters or a long run of digits like "07773185822222".
+  const updatePhone = (event) => {
+    const { name, value } = event.target;
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    setForm((prev) => ({ ...prev, [name]: digits }));
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!form.recipientName || !form.recipientPhone || !form.recipientCity) {
@@ -84,7 +93,7 @@ export default function CreateShipmentPage() {
         <p style={{ fontSize: 12, color: '#697086', margin: '0 0 16px' }}>Who is shipping the package.</p>
         <div className="form-grid">
           {field('Sender name', 'senderName', { placeholder: 'Sanduni Traders' })}
-          {field('Sender phone', 'senderPhone', { placeholder: '077 112 3344' })}
+          {field('Sender phone', 'senderPhone', { placeholder: '0771123344', onChange: updatePhone, inputMode: 'numeric', maxLength: 10 })}
         </div>
         <div className="form-grid">
           <div className="field">
@@ -100,7 +109,7 @@ export default function CreateShipmentPage() {
         <p style={{ fontSize: 12, color: '#697086', margin: '0 0 16px' }}>Where the package is going.</p>
         <div className="form-grid">
           {field('Recipient name', 'recipientName', { placeholder: 'Pasan Perera', required: true })}
-          {field('Recipient phone', 'recipientPhone', { placeholder: '071 554 2233', required: true })}
+          {field('Recipient phone', 'recipientPhone', { placeholder: '0715542233', required: true, onChange: updatePhone, inputMode: 'numeric', maxLength: 10 })}
         </div>
         <div className="form-grid">
           {field('Destination city', 'recipientCity', { placeholder: 'Kandy', required: true })}
