@@ -45,8 +45,7 @@ export default function ShipmentsListPage() {
           <h1 style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 21, color: '#12213F', margin: 0 }}>Shipment management</h1>
           <div style={{ fontSize: 13, color: '#697086', marginTop: 4 }}>{shipments.length} shipments tracked in this workspace.</div>
         </div>
-        {user?.role !== 'customer' && <Link to="/shipments/new"><Button variant="accent" icon={Plus}>New shipment</Button></Link>}
-      </div>
+        {user?.role !== 'customer' && user?.role !== 'finance' && <Link to="/shipments/new"><Button variant="accent" icon={Plus}>New shipment</Button></Link>}      </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>

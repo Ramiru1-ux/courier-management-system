@@ -77,13 +77,18 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('storage', sync);
   }, []);
 
-  const logout = useCallback((reason) => {
+    const logout = useCallback((reason) => {
     const activeRole = getActiveRole();
+    // Read this session's token BEFORE clearing storage, so the backend can
+    // record the logout time in login_details.
+    const storage = activeRole ? storageForRole(activeRole) : null;
+    const token = storage ? storage.getItem(keysFor(activeRole).token) : null;
+
     if (activeRole) clearRoleStorage(activeRole);
     setActiveRole(null);
     setSession({ token: null, user: null, expiresAt: null, remembered: false });
     // Fire-and-forget; a JWT is stateless so the client dropping it is enough.
-    authApi.logout().catch(() => {});
+    authApi.logout(token, typeof reason === 'string' ? reason : 'manual').catch(() => {});
     return reason || null;
   }, []);
 

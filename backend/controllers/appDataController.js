@@ -226,6 +226,38 @@ async function reconcileDriverAvailability(finalShipments) {
     { status: "Delivering", id: { $nin: [...activeDriverIds] } },
     { $set: { status: "Available" } }
   );
+  // Bulk saves no longer carry availability (see keepDriverAvailabilityFromDb
+  // below), so the server now also sets "Delivering" itself for every driver
+  // who has an active shipment.
+  await DriverModel.updateMany(
+    { status: { $ne: "Delivering" }, id: { $in: [...activeDriverIds] } },
+    { $set: { status: "Delivering" } }
+  );
+}
+
+/**
+ * Driver availability (drivers[].status) is owned by the driver and the
+ * server - never by a staff member's bulk save. Every save from the
+ * dispatcher/admin browser sends its whole in-memory drivers list, which is
+ * often older than the database: a driver who went Offline from the driver
+ * app a minute ago still shows "Available" there. Writing that list as-is
+ * silently put the driver back online (and made them assignable again).
+ *
+ * So for every driver that already exists, the status stored in MongoDB is
+ * kept. It only changes through:
+ *   - PUT /api/app-data/drivers/:id/availability (the driver themselves)
+ *   - reconcileDriverAvailability() (Delivering while they have active work)
+ * A brand-new driver row keeps the status it was created with.
+ */
+async function keepDriverAvailabilityFromDb(items) {
+  if (!Array.isArray(items)) return items;
+  const currentDrivers = await loadList("drivers");
+  const statusById = new Map(currentDrivers.map((driver) => [driver.id, driver.status]));
+  return items.map((driver) => {
+    if (!driver || !statusById.has(driver.id)) return driver;
+    const storedStatus = statusById.get(driver.id);
+    return storedStatus === undefined ? driver : { ...driver, status: storedStatus };
+  });
 }
 
 const derivedRows = (collection, data) => {
@@ -435,6 +467,10 @@ const saveAppData = async (req, res) => {
       effectivePayload[key] = payload[key];
     }
 
+    if (Object.prototype.hasOwnProperty.call(effectivePayload, "drivers")) {
+      effectivePayload.drivers = await keepDriverAvailabilityFromDb(effectivePayload.drivers);
+    }
+
     // Authoritative validation happens after ownership/permission filtering
     // (above) but before ANY write (below) - an invalid shipments list
     // rejects the whole request with nothing persisted, for this key or any
@@ -562,6 +598,11 @@ const saveEntity = async (req, res) => {
         ? reconcileScopedWrite(entity, toSave, currentItems, scope)
         : reconcileAppendOnlyWrite(toSave, currentItems);
     }
+
+    if (entity === "drivers") {
+      toSave = await keepDriverAvailabilityFromDb(toSave);
+    }
+
     const validationContext = await buildValidationContext({ [entity]: toSave });
     if (rejectIfInvalid(res, entity, toSave, validationContext[entity])) return;
     const count = await saveList(entity, toSave);
