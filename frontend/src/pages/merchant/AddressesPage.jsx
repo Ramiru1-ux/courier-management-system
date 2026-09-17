@@ -7,6 +7,7 @@ import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import useAuth from '../../hooks/useAuth';
 import useStore from '../../hooks/useStore';
+import { getNameError, getAddressError, filterNameInput, filterAddressInput } from '../../utils/textValidation';
 
 const emptyForm = { label: '', address: '', city: '', contact: '', phone: '' };
 
@@ -43,6 +44,13 @@ export default function MerchantAddressesPage() {
   const handleAdd = (event) => {
     event.preventDefault();
     if (!form.label || !form.address) return;
+    const fieldError = getAddressError(form.address, 'Address')
+      || getAddressError(form.city, 'City', { required: false })
+      || getNameError(form.contact, 'Contact person', { required: false });
+    if (fieldError) {
+      toast.error(fieldError);
+      return;
+    }
     addAddress(merchantName, form);
     toast.success('Address saved');
     setForm(emptyForm);
@@ -84,7 +92,7 @@ export default function MerchantAddressesPage() {
           {[['label', 'Label', 'Warehouse 2'], ['address', 'Address', 'No. 12, Main Street'], ['city', 'City', 'Colombo 5'], ['contact', 'Contact person', 'Full name'], ['phone', 'Phone', '011 555 1234']].map(([name, label, placeholder]) => (
             <div key={name}>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>{label}</label>
-              <input value={form[name]} onChange={(e) => setForm((p) => ({ ...p, [name]: e.target.value }))} placeholder={placeholder} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} />
+              <input value={form[name]} onChange={(e) => setForm((p) => ({ ...p, [name]: name === 'contact' ? filterNameInput(e.target.value) : name === 'phone' ? e.target.value : filterAddressInput(e.target.value) }))} placeholder={placeholder} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} />
             </div>
           ))}
         </form>

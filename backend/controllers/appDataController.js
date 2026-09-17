@@ -147,6 +147,15 @@ const FINANCE_EXCLUDED_WRITE_KEYS = new Set(["shipments", "drivers"]);
  */
 const APPEND_ONLY_FOR_SCOPED = new Set(["auditLogs", "podRecords", "notificationsOutbox"]);
 
+/**
+ * The operational availability states a driver can set for themselves from
+ * the driver portal (AVAILABILITY_OPTIONS in
+ * frontend/src/pages/driver/DriverDashboardPage.jsx). Distinct from
+ * `accountStatus`, which is Admin's portal-access control - see
+ * updateDriverAvailability() below.
+ */
+const DRIVER_AVAILABILITY_VALUES = ["Available", "Delivering", "Offline"];
+
 const roleOf = (req) => String(req.user?.role || "").toLowerCase();
 const isAdmin = (req) => roleOf(req) === "admin";
 const isAdminOrFinance = (req) => ["admin", "finance"].includes(roleOf(req));
@@ -216,23 +225,45 @@ const saveList = async (key, items) => {
  * sees the true, final picture).
  */
 async function reconcileDriverAvailability(finalShipments) {
-  const activeDriverIds = new Set(
-    (finalShipments || [])
-      .filter((s) => s && s.status === "OUT_FOR_DELIVERY" && s.driverId)
-      .map((s) => s.driverId)
-  );
+  const activeCountById = new Map();
+  for (const shipment of finalShipments || []) {
+    if (!shipment || shipment.status !== "OUT_FOR_DELIVERY" || !shipment.driverId) continue;
+    activeCountById.set(shipment.driverId, (activeCountById.get(shipment.driverId) || 0) + 1);
+  }
+
   const DriverModel = getAppModel("drivers");
-  await DriverModel.updateMany(
-    { status: "Delivering", id: { $nin: [...activeDriverIds] } },
-    { $set: { status: "Available" } }
-  );
+  const drivers = await DriverModel.find(
+    {},
+    { id: 1, status: 1, availabilitySetByDriver: 1, availabilitySetWithActiveCount: 1 }
+  ).lean();
+
+  const operations = [];
+  for (const driver of drivers) {
+    const activeCount = activeCountById.get(driver.id) || 0;
+
+    // A state the driver picked for themselves in the driver portal (see
+    // updateDriverAvailability() below) stands for as long as the workload
+    // it was chosen against is unchanged - so a driver who marks themselves
+    // Offline mid-round stays Offline instead of being flipped straight back
+    // to "Delivering" by the next save. It expires on its own as soon as
+    // their real active-delivery count moves (new assignment, POD captured,
+    // delivery failed), after which the automatic rules below take over
+    // again.
+    if (driver.availabilitySetByDriver === true && Number(driver.availabilitySetWithActiveCount || 0) === activeCount) continue;
+
+    const target = activeCount > 0 ? "Delivering" : driver.status === "Delivering" ? "Available" : driver.status;
+    const hasExpiredChoice = driver.availabilitySetByDriver === true;
+    if (target === driver.status && !hasExpiredChoice) continue;
+
+    const update = { $set: { status: target } };
+    if (hasExpiredChoice) update.$unset = { availabilitySetByDriver: "", availabilitySetWithActiveCount: "" };
+    operations.push({ updateOne: { filter: { id: driver.id }, update } });
+  }
+
   // Bulk saves no longer carry availability (see keepDriverAvailabilityFromDb
   // below), so the server now also sets "Delivering" itself for every driver
   // who has an active shipment.
-  await DriverModel.updateMany(
-    { status: { $ne: "Delivering" }, id: { $in: [...activeDriverIds] } },
-    { $set: { status: "Delivering" } }
-  );
+  if (operations.length) await DriverModel.bulkWrite(operations, { ordered: false });
 }
 
 /**
@@ -252,12 +283,124 @@ async function reconcileDriverAvailability(finalShipments) {
 async function keepDriverAvailabilityFromDb(items) {
   if (!Array.isArray(items)) return items;
   const currentDrivers = await loadList("drivers");
-  const statusById = new Map(currentDrivers.map((driver) => [driver.id, driver.status]));
+  const storedById = new Map(currentDrivers.map((driver) => [driver.id, driver]));
   return items.map((driver) => {
-    if (!driver || !statusById.has(driver.id)) return driver;
-    const storedStatus = statusById.get(driver.id);
-    return storedStatus === undefined ? driver : { ...driver, status: storedStatus };
+    if (!driver || !storedById.has(driver.id)) return driver;
+    const stored = storedById.get(driver.id);
+    const kept = { ...driver };
+    if (stored.status !== undefined) kept.status = stored.status;
+    // The marker for "the driver chose this themselves" belongs to the same
+    // stored state as the status it was recorded with (see
+    // updateDriverAvailability() below). A staff snapshot taken before that
+    // choice does not carry these fields at all, and letting it drop them
+    // would hand the choice straight back to reconcileDriverAvailability()
+    // to overwrite, so they are restored - or cleared - from MongoDB too.
+    for (const field of ["availabilitySetByDriver", "availabilitySetWithActiveCount"]) {
+      if (stored[field] === undefined) delete kept[field];
+      else kept[field] = stored[field];
+    }
+    return kept;
   });
+}
+
+/**
+ * Field stamped on every shipment this server writes, holding the moment it
+ * was last changed. It is deliberately NOT stripped by stripInternals(), so
+ * it travels out to the clients and back again with the rest of the record -
+ * but nothing in the UI reads it; only reconcileShipmentWrite() below does.
+ */
+const CHANGED_AT = "__updatedAt";
+
+/** Key-order-independent comparison of two records' business content. */
+const stableJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => key !== CHANGED_AT && key !== "__order" && key !== "_id")
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+};
+
+/**
+ * Protects shipment records from a stale whole-snapshot save.
+ *
+ * Every client keeps the entire store in memory and re-sends ALL of it on
+ * every save (see StoreContext.js), and saveList() below persists that list
+ * verbatim - existing rows replaced, rows missing from it deleted. For a
+ * staff role (admin, dispatcher; finance for the lists it may write) nothing
+ * filtered that, so a snapshot loaded minutes earlier was written back as if
+ * it were current: a dispatcher marking a shipment OUT_FOR_DELIVERY, or a
+ * driver's captured POD, was silently reverted to the older status the next
+ * time any other staff session saved anything at all - and a shipment
+ * created after that session loaded its page was deleted outright, because
+ * its id was simply absent from the older list. That is what made
+ * "At Branch" / "Out for Delivery" updates fail to stick for admin and
+ * finance.
+ *
+ * The fix is a three-way merge, per record, using `asOf` - the server time
+ * the requester's snapshot was read (returned by getAppData() and by every
+ * save, and echoed back by the client):
+ *   - a record the client has not touched is left exactly as the database
+ *     has it, whoever last changed it;
+ *   - a record the client genuinely changed is accepted, UNLESS the stored
+ *     copy has itself changed since that client last read it, in which case
+ *     the newer stored copy wins and the id is reported back so the client
+ *     can reload rather than fight over it;
+ *   - a record missing from the payload is deleted only if the client had
+ *     actually seen it; one created or changed after their read is kept.
+ *
+ * With no usable `asOf` (a client that does not send one) nothing is treated
+ * as newer and the previous replace-everything behaviour is unchanged.
+ */
+async function reconcileShipmentWrite(incoming, asOf) {
+  const stored = await loadList("shipments");
+  const storedById = new Map(stored.map((item) => [String(item.id), item]));
+  const readAt = Date.parse(asOf || "");
+
+  const changedSinceClientRead = (item) => {
+    if (!Number.isFinite(readAt)) return false;
+    const stamp = Date.parse(item?.[CHANGED_AT] || "");
+    return Number.isFinite(stamp) && stamp > readAt;
+  };
+
+  const now = new Date().toISOString();
+  const items = [];
+  const keptFromDb = [];
+  const sentIds = new Set();
+
+  for (const item of Array.isArray(incoming) ? incoming : []) {
+    if (!item || typeof item !== "object") continue;
+    const id = String(item.id ?? "");
+    sentIds.add(id);
+    const current = storedById.get(id);
+
+    if (!current) {
+      items.push({ ...item, [CHANGED_AT]: now });
+      continue;
+    }
+    if (stableJson(item) === stableJson(current)) {
+      items.push(current);
+      continue;
+    }
+    if (changedSinceClientRead(current)) {
+      keptFromDb.push(id);
+      items.push(current);
+      continue;
+    }
+    items.push({ ...item, [CHANGED_AT]: now });
+  }
+
+  // Anything the payload left out that the client cannot have seen yet -
+  // typically a shipment another session created since - is put back at the
+  // front, where a newly created shipment belongs (createShipment() in
+  // StoreContext.js prepends).
+  const unseen = stored.filter((item) => !sentIds.has(String(item.id)) && changedSinceClientRead(item));
+  unseen.forEach((item) => keptFromDb.push(String(item.id)));
+
+  return { items: [...unseen, ...items], keptFromDb };
 }
 
 const derivedRows = (collection, data) => {
@@ -395,6 +538,11 @@ const getAppData = async (req, res) => {
       success: true,
       empty: total === 0,
       total,
+      // The server time this snapshot was read. The client echoes it back on
+      // every save so reconcileShipmentWrite() can tell which records it has
+      // actually seen - without it, a save cannot be distinguished from a
+      // stale one.
+      asOf: new Date().toISOString(),
       data,
     });
   } catch (error) {
@@ -471,6 +619,15 @@ const saveAppData = async (req, res) => {
       effectivePayload.drivers = await keepDriverAvailabilityFromDb(effectivePayload.drivers);
     }
 
+    // Shipment records the requester's snapshot is too old to speak for are
+    // kept as the database has them (see reconcileShipmentWrite above).
+    let staleShipmentIds = [];
+    if (Object.prototype.hasOwnProperty.call(effectivePayload, "shipments")) {
+      const merged = await reconcileShipmentWrite(effectivePayload.shipments, req.body?.asOf);
+      effectivePayload.shipments = merged.items;
+      staleShipmentIds = merged.keptFromDb;
+    }
+
     // Authoritative validation happens after ownership/permission filtering
     // (above) but before ANY write (below) - an invalid shipments list
     // rejects the whole request with nothing persisted, for this key or any
@@ -533,6 +690,10 @@ const saveAppData = async (req, res) => {
       mirrored,
       mirrorErrors: Object.keys(mirrorErrors).length ? mirrorErrors : undefined,
       rejected: rejected.length ? rejected : undefined,
+      // Shipments whose stored copy was newer than this snapshot, so the
+      // database's version was kept. The client reloads when it sees these,
+      // which is how a screen that had gone stale catches up.
+      stale: staleShipmentIds.length ? staleShipmentIds : undefined,
       savedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -603,13 +764,26 @@ const saveEntity = async (req, res) => {
       toSave = await keepDriverAvailabilityFromDb(toSave);
     }
 
+    let staleShipmentIds = [];
+    if (entity === "shipments") {
+      const merged = await reconcileShipmentWrite(toSave, req.body?.asOf);
+      toSave = merged.items;
+      staleShipmentIds = merged.keptFromDb;
+    }
+
     const validationContext = await buildValidationContext({ [entity]: toSave });
     if (rejectIfInvalid(res, entity, toSave, validationContext[entity])) return;
     const count = await saveList(entity, toSave);
     if (entity === "shipments") {
       await reconcileDriverAvailability(toSave);
     }
-    return res.status(200).json({ success: true, message: `${entity} saved`, count });
+    return res.status(200).json({
+      success: true,
+      message: `${entity} saved`,
+      count,
+      stale: staleShipmentIds.length ? staleShipmentIds : undefined,
+      savedAt: new Date().toISOString(),
+    });
   } catch (error) {
     return fail(res, error, "Failed to save collection");
   }
@@ -749,13 +923,16 @@ const updateDriverLocation = async (req, res) => {
  * (never from the URL's :id alone - the URL value is only ever compared
  * against, never trusted).
  *
- * "Delivering" is deliberately NOT an accepted value here - it is a
- * SYSTEM-COMPUTED state (see reconcileDriverAvailability() and
- * assignDriver() in StoreContext.js), not a manual choice, and this
- * endpoint also refuses to let a driver override it away while they still
- * have real active work: if they currently have any shipment with
- * status OUT_FOR_DELIVERY assigned to them, the true state must stay
- * "Delivering" regardless of what they would like to claim.
+ * All three operational states (Available / Delivering / Offline) are the
+ * driver's own to set from their portal. "Delivering" is still maintained
+ * automatically from their real active-shipment count (see
+ * reconcileDriverAvailability() above and assignDriver() in
+ * StoreContext.js) so a driver who never touches this card always shows the
+ * true picture - but that automatic upkeep no longer overrides a state the
+ * driver has deliberately chosen. Previously "Delivering" was rejected here
+ * outright and any manual Available/Offline was refused with a 409 while a
+ * delivery was open, which left a driver holding active work unable to
+ * change their state at all.
  */
 const updateDriverAvailability = async (req, res) => {
   try {
@@ -770,24 +947,26 @@ const updateDriverAvailability = async (req, res) => {
     }
 
     const { availability } = req.body || {};
-    if (!["Available", "Offline"].includes(availability)) {
-      return res.status(400).json({ success: false, message: 'availability must be "Available" or "Offline"' });
+    if (!DRIVER_AVAILABILITY_VALUES.includes(availability)) {
+      return res.status(400).json({ success: false, message: `availability must be one of ${DRIVER_AVAILABILITY_VALUES.map((value) => `"${value}"`).join(", ")}` });
     }
 
+    // The driver's own choice is stored together with the active-delivery
+    // count it was made against, which is what lets
+    // reconcileDriverAvailability() tell "this driver has decided" from
+    // "this record is just stale" without needing any extra event: the
+    // choice stands while that count still matches, and expires by itself
+    // the moment their real workload changes.
     const ShipmentModel = getAppModel("shipments");
     const activeCount = await ShipmentModel.countDocuments({ driverId: driverBlobId, status: "OUT_FOR_DELIVERY" });
-    if (activeCount > 0) {
-      return res.status(409).json({
-        success: false,
-        message: `You have ${activeCount} active ${activeCount === 1 ? "delivery" : "deliveries"} in progress - availability updates automatically once they are complete`,
-        activeDeliveries: activeCount,
-      });
-    }
 
     const DriverModel = getAppModel("drivers");
-    await DriverModel.updateOne({ id: driverBlobId }, { $set: { status: availability } });
+    await DriverModel.updateOne(
+      { id: driverBlobId },
+      { $set: { status: availability, availabilitySetByDriver: true, availabilitySetWithActiveCount: activeCount } }
+    );
 
-    return res.status(200).json({ success: true, status: availability });
+    return res.status(200).json({ success: true, status: availability, activeDeliveries: activeCount });
   } catch (error) {
     return fail(res, error, "Failed to update driver availability");
   }

@@ -12,6 +12,14 @@ import { statusLabel, statusTone, formatLKR } from '../../utils/shipmentStatus';
 
 const STATUS_OPTIONS = ['All', 'CREATED', 'PICKED_UP', 'AT_ORIGIN_BRANCH', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERY_FAILED', 'RTO', 'CANCELLED'];
 
+// Roles that read this list but never create a shipment from it: a customer
+// books through their own portal, finance is read-only on shipments (see
+// FINANCE_EXCLUDED_WRITE_KEYS in backend/controllers/appDataController.js),
+// and a dispatcher's job is assigning and tracking work that already exists -
+// intake is not theirs. Everyone else (admin, branch, counter, merchant)
+// keeps the button.
+const VIEW_ONLY_ROLES = new Set(['customer', 'finance', 'dispatcher']);
+
 export default function ShipmentsListPage() {
   const { shipments, drivers } = useStore();
   const { user } = useAuth();
@@ -45,7 +53,8 @@ export default function ShipmentsListPage() {
           <h1 style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 21, color: '#12213F', margin: 0 }}>Shipment management</h1>
           <div style={{ fontSize: 13, color: '#697086', marginTop: 4 }}>{shipments.length} shipments tracked in this workspace.</div>
         </div>
-        {user?.role !== 'customer' && user?.role !== 'finance' && <Link to="/shipments/new"><Button variant="accent" icon={Plus}>New shipment</Button></Link>}      </div>
+        {!VIEW_ONLY_ROLES.has(user?.role) && <Link to="/shipments/new"><Button variant="accent" icon={Plus}>New shipment</Button></Link>}
+      </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>

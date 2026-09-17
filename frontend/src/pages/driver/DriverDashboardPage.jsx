@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { CheckCircle2, MapPin, Truck, WalletCards } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MapPin, Truck, WalletCards } from 'lucide-react';
 import PortalLayout from '../../components/layout/PortalLayout';
 import KpiCard from '../../components/common/KpiCard';
 import StatusBadge from '../../components/common/StatusBadge';
@@ -27,9 +27,29 @@ const AVAILABILITY_OPTIONS = [
 
 export default function DriverDashboardPage() {
   const { user } = useAuth();
-  const { shipments, drivers, reloadStore } = useStore();
-  const driverId = user?.driverId || 'DRV-01';
-  const driver = drivers.find((d) => d.id === driverId);
+  const { shipments, drivers, reloadStore, storeStatus } = useStore();
+  // A driver's login record does not reliably point at their record in the
+  // drivers list: only the original seed accounts carry a `driverId` at all,
+  // and those stored ids can be stale (pointing at a driver record that was
+  // since replaced), which is exactly why the server resolves the record by
+  // id FIRST and then falls back to a case-insensitive email match - see
+  // resolveDriverBlobId() in backend/utils/roleScope.js. Matching on
+  // `user.driverId` alone (with a hardcoded 'DRV-01' fallback) therefore left
+  // `driver` undefined for those accounts, and every availability click below
+  // then hit the `if (!driver?.id) return` guard and silently did nothing.
+  // Resolved the same three ways the server does - and because the driver
+  // scope returns exactly one driver record, their own
+  // (scopeSnapshotForRead() in roleScope.js), a single-record list is itself a
+  // reliable last resort.
+  const driver = useMemo(() => {
+    const byId = user?.driverId && drivers.find((d) => d.id === user.driverId);
+    if (byId) return byId;
+    const email = String(user?.email || '').toLowerCase();
+    const byEmail = email && drivers.find((d) => String(d.email || '').toLowerCase() === email);
+    if (byEmail) return byEmail;
+    return drivers.length === 1 ? drivers[0] : null;
+  }, [drivers, user]);
+  const driverId = driver?.id || user?.driverId || 'DRV-01';
   const [savingAvailability, setSavingAvailability] = useState(false);
 
   // Real browser Geolocation API (FR-24 previously had no real GPS
@@ -95,21 +115,36 @@ export default function DriverDashboardPage() {
   const deliveredToday = mine.filter((s) => s.status === 'DELIVERED').length;
   const codTotal = active.reduce((sum, s) => sum + (s.codAmount || 0), 0);
 
-  // "Delivering" is a system-computed state (see reconcileDriverAvailability()
-  // in appDataController.js and assignDriver()/capturePOD() in
-  // StoreContext.js) driven by real active-shipment count, never a manual
-  // choice - the backend rejects (409) any attempt to manually set
-  // Available/Offline while active.length > 0, so the buttons are disabled
-  // here too rather than letting a driver click something the server will
-  // just refuse.
+  // All three states are the driver's own to set. The system still keeps
+  // "Delivering" up to date on its own from the real active-shipment count
+  // (reconcileDriverAvailability() in appDataController.js, assignDriver() /
+  // capturePOD() in StoreContext.js), but a state the driver picks here now
+  // wins over that until their delivery list actually changes - previously
+  // "Delivering" was not selectable at all and the server refused (409) any
+  // manual Available/Offline while a delivery was open, so with any active
+  // work every button on this card was disabled at once.
   const hasActiveWork = active.length > 0;
+  const currentStatus = driver?.status || 'Offline';
+  // A driver login can exist with no driver record behind it at all: the
+  // record it pointed at was deleted, or the account predates the linkage
+  // admin/DriversPage.jsx now sets up on creation. The server then scopes
+  // this driver to an empty drivers list, so there is nothing whose
+  // availability could be changed - said plainly on the card below rather
+  // than only as a toast once they click, since the fix is an admin action,
+  // not something the driver can do from here. Only once the store has
+  // actually loaded, so it never flashes up during the initial fetch.
+  const missingDriverRecord = !driver && storeStatus !== 'loading';
   const handleSetAvailability = async (value) => {
-    if (!driver?.id || value === 'Delivering') return;
+    if (!driver?.id) {
+      toast.error('Your driver record could not be identified - ask an admin to link your account.');
+      return;
+    }
+    if (savingAvailability || value === currentStatus) return;
     setSavingAvailability(true);
     try {
       await updateDriverAvailability(driver.id, value);
       await reloadStore();
-      toast.success(`You are now ${value === 'Available' ? 'Available' : 'Offline'}`);
+      toast.success(`You are now ${value}`);
     } catch (error) {
       toast.error(error.data?.message || error.message || 'Could not update availability.');
     } finally {
@@ -143,16 +178,28 @@ export default function DriverDashboardPage() {
 
       <div style={{ background: '#fff', border: '1px solid #E3E7EF', borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
         <div style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 14.5, color: '#12213F', marginBottom: 4 }}>My availability</div>
-        <div style={{ fontSize: 11.5, color: '#697086', marginBottom: 14 }}>
-          {hasActiveWork
-            ? `You have ${active.length} active ${active.length === 1 ? 'delivery' : 'deliveries'} - availability updates automatically once they're complete.`
-            : 'Let dispatch know whether you can take new deliveries right now.'}
-        </div>
+        {missingDriverRecord ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#FDE9E7', border: '1px solid #F7C9C3', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+            <AlertTriangle size={15} color="#B23528" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 11.5, color: '#B23528', lineHeight: 1.5 }}>
+              <b>This account is not linked to a driver record.</b> Your deliveries and availability cannot load until an admin links it - ask them to add you under Admin / Drivers{user?.email ? ` with ${user.email}` : ''}.
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 11.5, color: '#697086', marginBottom: 14 }}>
+            {hasActiveWork
+              ? `You have ${active.length} active ${active.length === 1 ? 'delivery' : 'deliveries'} - you can still set your own state here, and it stays until your delivery list changes.`
+              : 'Let dispatch know whether you can take new deliveries right now.'}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {AVAILABILITY_OPTIONS.map((option) => {
-            const isCurrent = (driver?.status || 'Offline') === option.value;
-            const isDeliveryOption = option.value === 'Delivering';
-            const disabled = savingAvailability || isDeliveryOption || hasActiveWork;
+            // Nothing is marked "(current)" until the driver's real record is
+            // known - `currentStatus` falls back to 'Offline', which would
+            // otherwise highlight OFFLINE for an unlinked account as though
+            // that were a state it had actually been set to.
+            const isCurrent = Boolean(driver) && currentStatus === option.value;
+            const disabled = savingAvailability || missingDriverRecord;
             return (
               <button
                 key={option.value}

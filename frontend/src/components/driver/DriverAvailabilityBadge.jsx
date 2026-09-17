@@ -9,7 +9,11 @@ const styles = `
 	.driver-availability-badge.leave { background: #FDE9E7; color: #B23528; }
 `;
 
-const variants = { available: 'available', busy: 'busy', offline: 'offline', 'on leave': 'leave' };
+// "Delivering" is the status the drivers list actually stores for a driver
+// who is out on a round (see AVAILABILITY_OPTIONS in
+// pages/driver/DriverDashboardPage.jsx) - without it here it fell through to
+// the grey "offline" style, showing an on-the-road driver as offline.
+const variants = { available: 'available', busy: 'busy', delivering: 'busy', offline: 'offline', 'on leave': 'leave' };
 
 export default function DriverAvailabilityBadge({ status = 'Available', className = '' }) {
 	const variant = variants[String(status).trim().toLowerCase()] || 'offline';

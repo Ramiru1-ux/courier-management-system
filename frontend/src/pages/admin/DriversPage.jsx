@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
 import { getEmailError } from '../../utils/emailValidation';
+import { getNameError, filterNameInput } from '../../utils/textValidation';
 
 const emptyForm = { name: '', email: '', phone: '', branch: '', vehicle: '', vehicleType: 'Motorbike', vehicleModel: '', vehicleCapacity: '', insuranceExpiry: '', password: '' };
 
@@ -28,13 +29,23 @@ export default function DriversPage() {
     return drivers.filter((driver) => [driver.id, driver.name, driver.email, driver.phone, driver.branch, driver.vehicle, driver.status].join(' ').toLowerCase().includes(term));
   }, [drivers, query]);
 
-  const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  // A driver's name takes letters only, filtered as it is typed (see
+  // utils/textValidation.js); every other field is left as entered.
+  const update = (event) => setForm((current) => ({
+    ...current,
+    [event.target.name]: event.target.name === 'name' ? filterNameInput(event.target.value) : event.target.value,
+  }));
 
   const handleCreate = async (event) => {
     event.preventDefault();
     const email = form.email.trim().toLowerCase();
     if (!form.name.trim() || !email || !form.password || form.password.length < 8) {
       toast.error('Enter all required fields and a password with at least 8 characters.');
+      return;
+    }
+    const nameError = getNameError(form.name, 'Driver name');
+    if (nameError) {
+      toast.error(nameError);
       return;
     }
     const emailError = getEmailError(email);

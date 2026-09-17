@@ -12,6 +12,7 @@ import useStore from '../../hooks/useStore';
 import useAuth from '../../hooks/useAuth';
 import { generateOtp } from '../../utils/authSecurity';
 import { uploadPodPhoto } from '../../api/uploadsApi';
+import { getPodFileError } from '../../utils/uploadValidation';
 
 export default function PodCapturePage() {
   const { user } = useAuth();
@@ -47,6 +48,15 @@ export default function PodCapturePage() {
     }
     if (!otpVerified) {
       toast.error('Enter the correct OTP to confirm identity');
+      return;
+    }
+    // PhotoCapture refuses anything that breaks the rules before it ever
+    // reaches this state, so this is the safety net for a file that got in
+    // another way (a restored form state, a programmatic change) - the
+    // server checks it again regardless.
+    const fileError = getPodFileError(photoFile);
+    if (fileError) {
+      toast.error(fileError);
       return;
     }
     setSubmitting(true);
@@ -99,8 +109,8 @@ export default function PodCapturePage() {
               <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>Recipient signature</label>
               <div style={{ marginBottom: 18 }}><SignaturePad onChange={setSignature} /></div>
 
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>Delivery photograph</label>
-              <div style={{ marginBottom: 18, maxWidth: 280 }}><PhotoCapture onChange={setPhotoFile} /></div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>Delivery photograph <span style={{ fontWeight: 500, color: '#9AA1B4' }}>- JPEG, PNG or PDF, up to 10MB</span></label>
+              <div style={{ marginBottom: 18, maxWidth: 280 }}><PhotoCapture onChange={setPhotoFile} onError={(message) => toast.error(message)} /></div>
 
               <div style={{ background: '#E4F7F4', color: '#087367', borderRadius: 9, padding: '10px 12px', fontSize: 12, marginBottom: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <ShieldCheck size={15} />

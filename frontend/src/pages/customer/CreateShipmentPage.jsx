@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { filterNameInput, filterAddressInput } from '../../utils/textValidation';
 
 const initialForm = {
   recipientName: '',
@@ -38,9 +39,16 @@ export default function CreateShipmentPage() {
     return { base, serviceFee, codFee, total: base + serviceFee + codFee };
   }, [form.weight, form.service, form.payment]);
 
+  // A recipient name takes letters only and a delivery address refuses the
+  // symbols that never appear in one, filtered as they are typed - the same
+  // rules the staff booking form and the server apply (utils/textValidation.js
+  // and backend/validators/shipmentDataValidator.js).
   const update = (event) => {
     const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    let cleaned = value;
+    if (name === 'recipientName') cleaned = filterNameInput(value);
+    if (name === 'deliveryAddress') cleaned = filterAddressInput(value);
+    setForm((current) => ({ ...current, [name]: cleaned }));
   };
 
   const submit = (event) => {

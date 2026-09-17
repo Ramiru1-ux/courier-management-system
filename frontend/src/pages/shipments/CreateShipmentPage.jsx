@@ -5,6 +5,7 @@ import PortalLayout from '../../components/layout/PortalLayout';
 import Button from '../../components/common/Button';
 import useStore from '../../hooks/useStore';
 import useAuth from '../../hooks/useAuth';
+import { getNameError, getAddressError, filterNameInput, filterAddressInput } from '../../utils/textValidation';
 
 const initial = {
   senderName: '',
@@ -53,10 +54,38 @@ export default function CreateShipmentPage() {
     setForm((prev) => ({ ...prev, [name]: digits }));
   };
 
+  // Names and addresses are filtered the same way as the phone field above:
+  // a character that does not belong in one cannot be typed into it. The
+  // checks in handleSubmit then catch what a filter cannot (an empty or
+  // over-long value), and the same rules are enforced server-side in
+  // backend/validators/shipmentDataValidator.js for anything reaching the
+  // API another way.
+  const updateName = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: filterNameInput(value) }));
+  };
+
+  // Used for addresses and for place fields such as the destination city,
+  // which legitimately carry digits ("Colombo 03") and so cannot take the
+  // letters-only name rule.
+  const updateAddress = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: filterAddressInput(value) }));
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!form.recipientName || !form.recipientPhone || !form.recipientCity) {
       setError('Recipient name, phone and destination city are required.');
+      return;
+    }
+    const fieldError = getNameError(form.senderName, 'Sender name', { required: false })
+      || getNameError(form.recipientName, 'Recipient name')
+      || getAddressError(form.recipientCity, 'Destination city')
+      || getAddressError(form.senderAddress, 'Origin address', { required: false })
+      || getAddressError(form.recipientAddress, 'Destination address', { required: false });
+    if (fieldError) {
+      setError(fieldError);
       return;
     }
     setError('');
@@ -92,7 +121,7 @@ export default function CreateShipmentPage() {
         <div style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 14.5, color: '#12213F', marginBottom: 3 }}>Sender details</div>
         <p style={{ fontSize: 12, color: '#697086', margin: '0 0 16px' }}>Who is shipping the package.</p>
         <div className="form-grid">
-          {field('Sender name', 'senderName', { placeholder: 'Sanduni Traders' })}
+          {field('Sender name', 'senderName', { placeholder: 'Sanduni Traders', onChange: updateName })}
           {field('Sender phone', 'senderPhone', { placeholder: '0771123344', onChange: updatePhone, inputMode: 'numeric', maxLength: 10 })}
         </div>
         <div className="form-grid">
@@ -102,18 +131,18 @@ export default function CreateShipmentPage() {
               {branches.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
             </select>
           </div>
-          {field('Origin address', 'senderAddress', { placeholder: 'No. 8, Galle Road, Colombo 3' })}
+          {field('Origin address', 'senderAddress', { placeholder: 'No. 8, Galle Road, Colombo 3', onChange: updateAddress })}
         </div>
 
         <div style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 14.5, color: '#12213F', margin: '20px 0 3px' }}>Recipient details</div>
         <p style={{ fontSize: 12, color: '#697086', margin: '0 0 16px' }}>Where the package is going.</p>
         <div className="form-grid">
-          {field('Recipient name', 'recipientName', { placeholder: 'Pasan Perera', required: true })}
+          {field('Recipient name', 'recipientName', { placeholder: 'Pasan Perera', required: true, onChange: updateName })}
           {field('Recipient phone', 'recipientPhone', { placeholder: '0715542233', required: true, onChange: updatePhone, inputMode: 'numeric', maxLength: 10 })}
         </div>
         <div className="form-grid">
-          {field('Destination city', 'recipientCity', { placeholder: 'Kandy', required: true })}
-          {field('Destination address', 'recipientAddress', { placeholder: '21 Temple Road' })}
+          {field('Destination city', 'recipientCity', { placeholder: 'Kandy', required: true, onChange: updateAddress })}
+          {field('Destination address', 'recipientAddress', { placeholder: '21 Temple Road', onChange: updateAddress })}
         </div>
 
         <div style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 14.5, color: '#12213F', margin: '20px 0 3px' }}>Pricing & logistics</div>

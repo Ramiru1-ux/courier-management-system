@@ -295,6 +295,12 @@ export function StoreProvider({ children }) {
   const latestRef = useRef(null);
   const lastSavedRef = useRef('');
   const saveTimerRef = useRef(null);
+  // Server time this snapshot was read, refreshed after every successful
+  // save. Sent back with each save so the server can keep records this
+  // session is too old to speak for - see reconcileShipmentWrite() in
+  // backend/controllers/appDataController.js. Without it, saving a snapshot
+  // loaded minutes ago reverted other people's shipment status changes.
+  const asOfRef = useRef('');
 
   /**
    * Loads every list from MongoDB (GET /api/app-data). On a completely empty
@@ -306,6 +312,7 @@ export function StoreProvider({ children }) {
     setStoreError('');
     try {
       const response = await appDataApi.getAll();
+      asOfRef.current = response?.asOf || '';
       const remote = response?.data || {};
       const isEmpty = response?.empty === true
         || Object.keys(remote).length === 0
@@ -314,12 +321,14 @@ export function StoreProvider({ children }) {
       let next;
       if (isEmpty) {
         next = seedData();
-        await appDataApi.saveAll(next);
+        const seeded = await appDataApi.saveAll(next, asOfRef.current);
+        if (seeded?.savedAt) asOfRef.current = seeded.savedAt;
       } else {
         next = mergeWithShape(remote);
         // A full startup sync also populates legacy/domain collections that
         // were added after the cms_* collections already existed.
-        await appDataApi.saveAll(next);
+        const synced = await appDataApi.saveAll(next, asOfRef.current);
+        if (synced?.savedAt) asOfRef.current = synced.savedAt;
       }
 
       lastSavedRef.current = JSON.stringify(next);
@@ -376,11 +385,19 @@ export function StoreProvider({ children }) {
     window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(async () => {
       try {
-        await appDataApi.saveAll(latestRef.current);
+        const response = await appDataApi.saveAll(latestRef.current, asOfRef.current);
         lastSavedRef.current = JSON.stringify(latestRef.current);
+        if (response?.savedAt) asOfRef.current = response.savedAt;
         setSaveState('saved');
         setStoreError('');
         if (storeStatus === 'offline') setStoreStatus('ready');
+        // The server kept its own, newer copy of one or more shipments
+        // because this screen had gone stale (someone else moved them on
+        // while it sat open). Pull the real state in so the lists show what
+        // actually happened instead of what this tab still believed.
+        if (Array.isArray(response?.stale) && response.stale.length > 0) {
+          loadFromServer();
+        }
       } catch (error) {
         // 409 = the server refused the change because this screen was out of
         // date (e.g. the chosen driver has gone offline). Show why, then load
@@ -506,7 +523,15 @@ export function StoreProvider({ children }) {
     setData((current) => {
       const shipments = current.shipments.map((shipment) => {
         if (shipment.id !== shipmentId) return shipment;
-        const releaseDriver = ['DELIVERED', 'DELIVERY_FAILED', 'RTO', 'CANCELLED', 'DAMAGED', 'LOST'].includes(status);
+        // A DELIVERED shipment keeps the driver who delivered it. Clearing
+        // it here erased the only record of who did the job: the delivery
+        // then showed as "Unassigned" on every staff screen, and - because
+        // the server scopes a driver to shipments carrying their own id
+        // (scopeSnapshotForRead in backend/utils/roleScope.js) - it vanished
+        // from the driver's own portal the moment they completed it. The
+        // driver is still released back to Available below, which depends on
+        // the shipment's STATUS, not on wiping its driverId.
+        const releaseDriver = ['DELIVERY_FAILED', 'RTO', 'CANCELLED', 'DAMAGED', 'LOST'].includes(status);
         targetShipment = shipment;
         return {
           ...shipment,
@@ -521,9 +546,9 @@ export function StoreProvider({ children }) {
       // (e.g. Shipments 1-6 all assigned to the same driver) - completing
       // ONE of them must only release the driver back to 'Available' once
       // NONE of their other shipments are still OUT_FOR_DELIVERY. `shipments`
-      // above already reflects the just-applied update (this shipment's
-      // driverId is cleared if it just went terminal), so checking it
-      // directly correctly excludes the shipment just completed.
+      // above already reflects the just-applied update, and the one just
+      // finished no longer has status OUT_FOR_DELIVERY, so it is excluded by
+      // the status test regardless of whether it kept its driverId.
       if (changed && changed.driverId && ['DELIVERED', 'DELIVERY_FAILED', 'RTO', 'CANCELLED', 'DAMAGED', 'LOST'].includes(status)) {
         const stillHasActiveWork = shipments.some((s) => s.driverId === changed.driverId && s.status === 'OUT_FOR_DELIVERY');
         if (!stillHasActiveWork) {
@@ -853,8 +878,13 @@ export function StoreProvider({ children }) {
         notes: pod.notes || '',
         capturedAt: friendlyTime(),
       };
+      // The shipment keeps its driverId (see updateShipmentStatus above):
+      // this is the record of who delivered it, and the driver's own portal
+      // is scoped by exactly that field, so wiping it made a delivery they
+      // had just completed disappear from their list - and show as
+      // "Unassigned" to admin, dispatch and finance.
       const shipments = current.shipments.map((s) => (s.id === shipmentId
-        ? { ...s, status: 'DELIVERED', driverId: null, history: [...s.history, { label: `Proof of delivery captured - signed by ${record.recipientName}`, time: friendlyTime() }] }
+        ? { ...s, status: 'DELIVERED', history: [...s.history, { label: `Proof of delivery captured - signed by ${record.recipientName}`, time: friendlyTime() }] }
         : s));
       // Same "don't release a driver who still has other active
       // shipments" rule as updateShipmentStatus() above - a driver working
@@ -965,7 +995,14 @@ export function StoreProvider({ children }) {
   const resetDemoData = useCallback(() => {
     const fresh = seedData();
     setData(fresh);
-    return appDataApi.saveAll(fresh).catch(() => {});
+    // Deliberately sent with no `asOf`: a reset is meant to replace every
+    // collection wholesale, so the per-record merge that protects a normal
+    // save from stale data (reconcileShipmentWrite in the backend) must not
+    // hold any of the old records back.
+    return appDataApi.saveAll(fresh).then((response) => {
+      if (response?.savedAt) asOfRef.current = response.savedAt;
+      return response;
+    }).catch(() => {});
   }, []);
 
   const value = useMemo(() => ({

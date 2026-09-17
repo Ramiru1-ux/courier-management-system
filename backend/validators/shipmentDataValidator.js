@@ -22,7 +22,7 @@
  * frontend/src/utils/shipmentStatus.js (STATUS_META, the single source of
  * truth every page already agrees on).
  */
-const { validationError, required, optionalString, number, oneOf } = require("./validatorHelpers");
+const { validationError, required, optionalString, number, oneOf, personName, postalText } = require("./validatorHelpers");
 
 const SERVICE_TYPES = ["Standard", "Express", "Priority", "Same-Day", "Regional"];
 const STATUSES = [
@@ -60,6 +60,25 @@ function validateShipmentRecord(item, index, context = {}) {
 	optionalString(required(item.recipientPhone, path("recipientPhone")), path("recipientPhone"), 30);
 	optionalString(required(item.recipientCity, path("recipientCity")), path("recipientCity"), 80);
 	optionalString(required(item.branch, path("branch")), path("branch"), 120);
+
+	// Free-text field rules, the same ones the booking forms apply as people
+	// type (frontend/src/utils/textValidation.js): a person or company name is
+	// letters only, while an address, city or branch name takes digits but
+	// never the symbols @$%^&*()_+.
+	//
+	// Checked ONLY on a value that is new or has just changed - the same
+	// reasoning as the suspended-driver rule below. Every save re-sends the
+	// whole list, so validating stored values too would let these rules
+	// retro-invalidate records created before them and reject every future
+	// save of the entire collection, not just the record at fault.
+	const storedItem = context.currentById?.get(String(item.id));
+	const justEntered = (field) => !storedItem || storedItem[field] !== item[field];
+	if (justEntered("recipientName")) personName(item.recipientName, path("recipientName"));
+	if (justEntered("senderName")) personName(item.senderName, path("senderName"));
+	if (justEntered("recipientCity")) postalText(item.recipientCity, path("recipientCity"), { maxLength: 80 });
+	if (justEntered("recipientAddress")) postalText(item.recipientAddress, path("recipientAddress"));
+	if (justEntered("senderAddress")) postalText(item.senderAddress, path("senderAddress"));
+	if (justEntered("branch")) postalText(item.branch, path("branch"), { maxLength: 120 });
 
 	oneOf(item.serviceType || "Standard", path("serviceType"), SERVICE_TYPES);
 	oneOf(item.status, path("status"), STATUSES);

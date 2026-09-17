@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
 import { getEmailError } from '../../utils/emailValidation';
+import { getNameError, filterNameInput } from '../../utils/textValidation';
 
 const emptyForm = { name: '', email: '', password: '', role: 'dispatcher', branch: '', merchantName: '' };
 
@@ -37,6 +38,11 @@ export default function UsersPage() {
     if (saving) return;
     if (!form.name || !form.email) {
       toast.error('Name and email are required.');
+      return;
+    }
+    const nameError = getNameError(form.name, 'Full name');
+    if (nameError) {
+      toast.error(nameError);
       return;
     }
     const emailError = getEmailError(form.email);
@@ -148,13 +154,13 @@ export default function UsersPage() {
         open={open}
         onClose={() => setOpen(false)}
         title="Add user"
-        description="Create a new admin, finance officer or dispatcher account."
+        description="Create a new administrator, finance officer, dispatcher or merchant account. Drivers are added under Admin / Drivers."
         footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" onClick={handleCreate} disabled={saving}>{saving ? 'Saving…' : 'Create user'}</Button></>}
       >
         <form onSubmit={handleCreate} style={{ display: 'grid', gap: 12 }}>
           <div className="field">
             <label style={{ fontSize: 12, fontWeight: 600, color: '#697086' }}>Full name</label>
-            <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Jane Doe" style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} />
+            <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: filterNameInput(e.target.value) }))} placeholder="Jane Doe" style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} />
           </div>
           <div className="field">
             <label style={{ fontSize: 12, fontWeight: 600, color: '#697086' }}>Email</label>
@@ -167,12 +173,19 @@ export default function UsersPage() {
           </div>
           <div className="field">
             <label style={{ fontSize: 12, fontWeight: 600, color: '#697086' }}>Role</label>
+            {/* The roles this system actually has are Administrator,
+                Dispatcher, Driver, Merchant and Finance Officer. "Branch
+                Manager" was offered here but is not one of them, so it is
+                gone. A driver is created from Admin / Drivers instead
+                (DriversPage.jsx), which sets up their fleet record and their
+                login together - creating one here would leave a driver login
+                with no driver record behind it, which is exactly what makes
+                the driver portal unable to load deliveries or availability. */}
             <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}>
               <option value="admin">Administrator</option>
               <option value="finance">Finance Officer</option>
               <option value="dispatcher">Dispatcher</option>
               <option value="merchant">Merchant</option>
-              <option value="branch">Branch Manager</option>
             </select>
           </div>
           {form.role === 'merchant' ? (
