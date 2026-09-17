@@ -35,7 +35,7 @@ export default function ShipmentDetailsPage() {
 
   const driver = drivers.find((d) => d.id === shipment.driverId);
   const canDispatch = user?.role === 'dispatcher' || user?.role === 'admin';
-  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering');
+  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering' && d.status !== 'Offline');
   const stepIndex = flowIndex(shipment.status);
 
   const handleAssign = () => {

@@ -1,6 +1,6 @@
 const express = require("express");
 const controller = require("../controllers/authController");
-const { authenticate } = require("../middleware/authMiddleware");
+const { authenticate, optionalAuth } = require("../middleware/authMiddleware");
 const { authorizeRoles } = require("../middleware/roleMiddleware");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 
@@ -29,7 +29,7 @@ const accountFlowLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30
 
 // --- public ---
 router.post("/login", loginLimiter, controller.login);
-router.post("/logout", controller.logout);
+router.post("/logout", optionalAuth, controller.logout);
 router.post("/forgot-password", accountFlowLimiter, controller.forgotPassword);
 router.post("/reset-password", accountFlowLimiter, controller.resetPassword);
 
@@ -64,6 +64,7 @@ router.post("/users", authenticate, authorizeRoles("admin"), controller.createUs
 router.get("/users", authenticate, authorizeRoles("admin"), controller.getUsers);
 router.get("/users/:id", authenticate, authorizeRoles("admin"), controller.getUserById);
 router.patch("/users/:id", authenticate, authorizeRoles("admin"), controller.updateUser);
+router.delete("/users/by-email/:email", authenticate, authorizeRoles("admin"), controller.deleteUserByEmail);
 router.delete("/users/:id", authenticate, authorizeRoles("admin"), controller.deleteUser);
 
 module.exports = router;

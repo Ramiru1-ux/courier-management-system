@@ -1,9 +1,11 @@
 const crypto = require("crypto");
 const User = require("../models/User");
+const LoginDetail = require("../models/LoginDetail");
 const AuditLog = require("../models/AuditLog");
 const generateToken = require("../utils/generateToken");
 const { createCrudController } = require("../utils/controllerFactory");
 const { getLockoutSecondsRemaining, recordFailedLogin, clearFailedLogins } = require("../utils/loginAttempts");
+const { getEmailError } = require("../utils/emailValidation");
 
 const crud = createCrudController(User, "User", {
 	searchFields: ["name", "email", "phone"],
@@ -48,6 +50,36 @@ const bad = (res, status, message) => res.status(status).json({ success: false, 
  * Fire-and-forget on purpose (not awaited by callers) - a failure to write
  * the log must never block or fail the actual login response.
  */
+
+/** The caller's IP, without the "::ffff:" prefix Node adds to IPv4 addresses. */
+const clientIp = (req) => String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+
+/**
+ * Saves one row in the `login_details` collection for a sign-in attempt.
+ * Awaited so the row exists before the response is sent, but any database
+ * error is only logged - a problem saving the history must never stop a
+ * real user from signing in or change the message a failed attempt gets.
+ */
+const recordLoginDetail = async (req, { user = null, email, requestedRole = null, success, failureReason = "" }) => {
+	try {
+		await LoginDetail.create({
+			user: user?._id,
+			name: user?.name || "",
+			email: email || "(not provided)",
+			role: user?.role || "",
+			requestedRole: requestedRole || "",
+			success,
+			status: success ? "success" : "failed",
+			failureReason,
+			ipAddress: clientIp(req),
+			userAgent: String(req.headers["user-agent"] || "").slice(0, 500),
+			loginAt: new Date(),
+		});
+	} catch (error) {
+		console.error("Could not save login details:", error.message);
+	}
+};
+
 const logLoginAttempt = (req, { email, success, reason, userId }) => {
 	AuditLog.create({
 		user: userId || undefined,
@@ -78,12 +110,16 @@ const login = async (req, res) => {
 		const email = String(req.body?.email || "").trim().toLowerCase();
 		const password = String(req.body?.password || "");
 		const expectedRole = req.body?.role ? String(req.body.role).toLowerCase() : null;
+		const attempt = { email, requestedRole: expectedRole };
 
-		if (!email || !password) return bad(res, 400, "Email and password are required");
+		if (!email || !password) {
+			await recordLoginDetail(req, { ...attempt, success: false, failureReason: "missing_credentials" });
+			return bad(res, 400, "Email and password are required");
+		}
 
 		const lockedForSeconds = getLockoutSecondsRemaining(email);
 		if (lockedForSeconds > 0) {
-			logLoginAttempt(req, { email, success: false, reason: "locked_out" });
+			await recordLoginDetail(req, { ...attempt, success: false, failureReason: "locked_out" });
 			res.setHeader("Retry-After", lockedForSeconds);
 			return res.status(429).json({
 				success: false,
@@ -95,31 +131,31 @@ const login = async (req, res) => {
 		const user = await User.findOne({ email }).select("+password");
 		if (!user) {
 			recordFailedLogin(email);
-			logLoginAttempt(req, { email, success: false, reason: "unknown_email" });
+			await recordLoginDetail(req, { ...attempt, success: false, failureReason: "user_not_found" });
 			return bad(res, 401, "Incorrect email or password");
 		}
 
 		const matches = await user.comparePassword(password);
 		if (!matches) {
 			recordFailedLogin(email);
-			logLoginAttempt(req, { email, success: false, reason: "wrong_password", userId: user._id });
+			await recordLoginDetail(req, { ...attempt, user, success: false, failureReason: "wrong_password" });
 			return bad(res, 401, "Incorrect email or password");
 		}
 
 		if (user.status && String(user.status).toLowerCase() !== "active") {
-			logLoginAttempt(req, { email, success: false, reason: "account_suspended", userId: user._id });
+			await recordLoginDetail(req, { ...attempt, user, success: false, failureReason: "account_suspended" });
 			return bad(res, 403, "This account is suspended. Please contact your administrator.");
 		}
 
 		if (expectedRole && String(user.role).toLowerCase() !== expectedRole) {
-			logLoginAttempt(req, { email, success: false, reason: "role_mismatch", userId: user._id });
+			await recordLoginDetail(req, { ...attempt, user, success: false, failureReason: "role_mismatch" });
 			return bad(res, 403, `This account is not a ${expectedRole} account`);
 		}
 
 		clearFailedLogins(email);
 		user.lastLoginAt = new Date();
 		await user.save({ validateBeforeSave: false });
-		logLoginAttempt(req, { email, success: true, userId: user._id });
+		await recordLoginDetail(req, { ...attempt, user, success: true });
 
 		return res.status(200).json({
 			success: true,
@@ -141,10 +177,18 @@ const register = async (req, res) => {
 		const body = req.body || {};
 		const email = String(body.email || "").trim().toLowerCase();
 		if (!email || !body.password) return bad(res, 400, "Email and password are required");
+		const emailError = getEmailError(email);
+		if (emailError) return bad(res, 400, emailError);
 		if (String(body.password).length < 6) return bad(res, 400, "Password must be at least 6 characters");
 
-		const existing = await User.findOne({ email });
-		if (existing) return bad(res, 409, "An account with this email already exists");
+		// Only a document that actually has a password is a real login account.
+		// A password-less document with this email is a leftover copy written
+		// by the app-data mirror (appDataController.mirrorLegacyCollections)
+		// for a user who has since been deleted - it can never sign in, so it
+		// is removed here instead of blocking the email from being reused.
+		const hasLoginAccount = await User.exists({ email, password: { $exists: true, $nin: [null, ""] } });
+		if (hasLoginAccount) return bad(res, 409, "An account with this email already exists");
+		await User.deleteMany({ email });
 
 		const role = String(body.role || "customer").toLowerCase();
 		if (!CREATABLE_ROLES.has(role)) {
@@ -175,15 +219,72 @@ const register = async (req, res) => {
 	}
 };
 
+/**
+ * DELETE /api/auth/users/by-email/:email  (admin only)
+ * Removes the real login account(s) for an email from the `users`
+ * collection. The Users and Drivers pages call this when an admin deletes
+ * someone, so the email is free to be added again later.
+ *
+ * Answers 200 even when no account exists (a list row that never had a
+ * login), so the page can still remove that row.
+ */
+const deleteUserByEmail = async (req, res) => {
+	try {
+		const email = String(req.params?.email || "").trim().toLowerCase();
+		if (!email) return bad(res, 400, "Email is required");
+
+		if (req.user?.email && String(req.user.email).toLowerCase() === email) {
+			return bad(res, 400, "You cannot delete the account you are currently signed in with");
+		}
+
+		const result = await User.deleteMany({ email });
+		return res.status(200).json({
+			success: true,
+			message: result.deletedCount ? "Login account deleted" : "No login account was found for this email",
+			deletedCount: result.deletedCount,
+		});
+	} catch (error) {
+		return res.status(500).json({ success: false, message: error.message || "Could not delete the account" });
+	}
+};
+
 /** GET /api/auth/me - who is this token? Used to restore a session on reload. */
 const getMe = async (req, res) => {
 	if (!req.user) return bad(res, 401, "Authentication required");
 	return res.status(200).json({ success: true, data: publicUser(req.user) });
 };
 
-/** POST /api/auth/logout - JWTs are stateless, the client drops the token. */
-const logout = async (req, res) =>
-	res.status(200).json({ success: true, message: "Signed out successfully" });
+/**
+ * POST /api/auth/logout
+ * JWTs are stateless, so the client dropping the token is what actually signs
+ * the user out. When the request carries a valid token (optionalAuth in
+ * authRoutes.js sets req.user), the user's latest open row in
+ * `login_details` is closed with the logout time and session length.
+ */
+const logout = async (req, res) => {
+	try {
+		if (req.user) {
+			const loginDetail = await LoginDetail.findOne({
+				user: req.user._id,
+				success: true,
+				logoutAt: null,
+			}).sort({ loginAt: -1 });
+
+			if (loginDetail) {
+				const logoutAt = new Date();
+				loginDetail.logoutAt = logoutAt;
+				loginDetail.logoutReason = String(req.body?.reason || "manual").slice(0, 50);
+				loginDetail.sessionDurationSeconds = Math.round((logoutAt - loginDetail.loginAt) / 1000);
+				loginDetail.status = "logged_out";
+				await loginDetail.save();
+			}
+		}
+	} catch (error) {
+		console.error("Could not save logout details:", error.message);
+	}
+
+	return res.status(200).json({ success: true, message: "Signed out successfully" });
+};
 
 /**
  * POST /api/auth/forgot-password
@@ -315,6 +416,7 @@ module.exports = {
 	resetPassword,
 	changePassword,
 	updateProfile,
+	deleteUserByEmail,
 	createUser: crud.create,
 	getUsers: crud.list,
 	getUserById: crud.getById,

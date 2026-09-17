@@ -24,7 +24,7 @@ export default function PendingDeliveriesPage() {
     return list.filter((s) => [s.trackingNumber, s.recipientName, s.recipientCity].join(' ').toLowerCase().includes(term));
   }, [shipments, query]);
 
-  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering');
+  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering' && d.status !== 'Offline');
 
   const openAssign = (shipment) => {
     setTarget(shipment);

@@ -20,7 +20,7 @@ export default function RouteOptimizerPage() {
     return Object.entries(byCity).map(([city, items]) => ({ city, items }));
   }, [shipments]);
 
-  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering');
+    const availableDrivers = drivers.filter((d) => d.status !== 'Delivering' && d.status !== 'Offline');
 
   const handleDispatch = (group) => {
     const driverId = selectedDrivers[group.city];

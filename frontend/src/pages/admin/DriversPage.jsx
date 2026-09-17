@@ -10,6 +10,7 @@ import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
+import { getEmailError } from '../../utils/emailValidation';
 
 const emptyForm = { name: '', email: '', phone: '', branch: '', vehicle: '', vehicleType: 'Motorbike', vehicleModel: '', vehicleCapacity: '', insuranceExpiry: '', password: '' };
 
@@ -19,6 +20,7 @@ export default function DriversPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [pendingAction, setPendingAction] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -33,6 +35,11 @@ export default function DriversPage() {
     const email = form.email.trim().toLowerCase();
     if (!form.name.trim() || !email || !form.password || form.password.length < 8) {
       toast.error('Enter all required fields and a password with at least 8 characters.');
+      return;
+    }
+    const emailError = getEmailError(email);
+    if (emailError) {
+      toast.error(emailError);
       return;
     }
     if (drivers.some((driver) => driver.email?.toLowerCase() === email)) {
@@ -73,16 +80,30 @@ export default function DriversPage() {
     setOpen(false);
   };
 
-  const confirmAction = () => {
-    if (!pendingAction) return;
+    const confirmAction = async () => {
+    if (!pendingAction || busy) return;
+
     if (pendingAction.action === 'delete') {
-      removeDriver(pendingAction.driver.id);
-      toast.success(`${pendingAction.driver.name} deleted`);
-    } else {
-      const nextStatus = pendingAction.driver.accountStatus === 'Suspended' ? 'Active' : 'Suspended';
-      setDriverAccountStatus(pendingAction.driver.id, nextStatus);
-      toast.success(`${pendingAction.driver.name} portal access ${nextStatus === 'Active' ? 'restored' : 'deactivated'}`);
+      const { driver } = pendingAction;
+      setBusy(true);
+      try {
+        // Remove the driver-portal login from MongoDB first so the email can
+        // be used again; only then remove the driver row from the list.
+        if (driver.email) await authApi.deleteUserByEmail(driver.email);
+        removeDriver(driver.id);
+        toast.success(`${driver.name} deleted`);
+        setPendingAction(null);
+      } catch (error) {
+        toast.error(error?.message || 'Could not delete the driver login.');
+      } finally {
+        setBusy(false);
+      }
+      return;
     }
+
+    const nextStatus = pendingAction.driver.accountStatus === 'Suspended' ? 'Active' : 'Suspended';
+    setDriverAccountStatus(pendingAction.driver.id, nextStatus);
+    toast.success(`${pendingAction.driver.name} portal access ${nextStatus === 'Active' ? 'restored' : 'deactivated'}`);
     setPendingAction(null);
   };
 
@@ -142,8 +163,9 @@ export default function DriversPage() {
           : `${pendingAction?.driver?.accountStatus === 'Suspended' ? 'Restore' : 'Disable'} portal access for ${pendingAction?.driver?.name || 'this driver'}?`}
         confirmLabel={pendingAction?.action === 'delete' ? 'Delete driver' : pendingAction?.driver?.accountStatus === 'Suspended' ? 'Activate' : 'Deactivate'}
         danger={pendingAction?.action === 'delete' || pendingAction?.driver?.accountStatus !== 'Suspended'}
+        loading={busy}
         onConfirm={confirmAction}
-        onCancel={() => setPendingAction(null)}
+        onCancel={() => { if (!busy) setPendingAction(null); }}
       />
     </PortalLayout>
   );

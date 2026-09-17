@@ -11,7 +11,13 @@
     "validate": "node -e \"const fs=require('fs'); const folders=['config','controllers','jobs','middleware','models','routes','services','sockets','utils','validators']; for(const folder of folders){for(const file of fs.readdirSync(folder).filter(name=>name.endsWith('.js'))){require('./'+folder+'/'+file)}} console.log('Backend modules validated')\"",
     "test": "npm run check && npm run validate"
   },
-  "keywords": ["courier", "delivery", "logistics", "express", "mongodb"],
+  "keywords": [
+    "courier",
+    "delivery",
+    "logistics",
+    "express",
+    "mongodb"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

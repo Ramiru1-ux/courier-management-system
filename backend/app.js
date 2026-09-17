@@ -13,6 +13,9 @@ const app = express();
 app.disable("x-powered-by");
 // The frontend runs three portals on three ports (main 5173, driver 5174,
 // customer 5175), so allow all of them plus whatever FRONTEND_URL is set to.
+// Behind a hosting proxy (Render, Railway, Nginx...) this makes req.ip the
+// visitor's real IP instead of the proxy's, for login_details.ipAddress.
+app.set("trust proxy", 1);
 const allowedOrigins = [
 	env.FRONTEND_URL,
 	"http://localhost:5173",
