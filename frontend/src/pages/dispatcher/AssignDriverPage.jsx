@@ -12,7 +12,7 @@ export default function AssignDriverPage() {
   const [driverId, setDriverId] = useState('');
 
   const assignable = useMemo(() => shipments.filter((s) => !s.driverId && ['CREATED', 'PICKED_UP', 'AT_ORIGIN_BRANCH'].includes(s.status)), [shipments]);
-  const availableDrivers = useMemo(() => drivers.filter((d) => d.status !== 'Delivering'), [drivers]);
+  const availableDrivers = useMemo(() => drivers.filter((d) => d.status !== 'Delivering' && d.status !== 'Offline'), [drivers]);
 
   const selectedShipment = shipments.find((s) => s.id === shipmentId);
   const selectedDriver = drivers.find((d) => d.id === driverId);

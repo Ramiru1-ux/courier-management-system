@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 import useStore from '../../hooks/useStore';
+import LogoutConfirmDialog from '../common/LogoutConfirmDialog';
+import Footer from './Footer';
 
 // Only three roles ship in this build: admin, finance, dispatcher. Every
 // section links only to routes actually registered in AppRoutes.jsx.
@@ -157,7 +159,7 @@ const layoutStyles = `
   .portal-user-role { font-size: 10.5px; color: #8792B0; }
   .portal-logout { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; border: 1px solid #26385E; background: transparent; color: #B7C0DE; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .portal-logout:hover { background: #1B2E5C; color: #fff; }
-  .portal-main { flex: 1; min-width: 0; background: #F3F5F9; }
+  .portal-main { flex: 1; min-width: 0; background: #F3F5F9; display: flex; flex-direction: column; }
   .portal-topbar { height: 66px; border-bottom: 1px solid #E3E7EF; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; background: #fff; gap: 16px; }
   .portal-search-form { display: flex; align-items: center; gap: 9px; background: #F3F5F9; border: 1px solid #E3E7EF; border-radius: 10px; padding: 9px 14px; width: 340px; color: #9AA1B4; font-size: 13px; }
   .portal-search-form input { border: none; outline: none; background: transparent; width: 100%; color: #151A2E; font-size: 13px; }
@@ -166,7 +168,7 @@ const layoutStyles = `
   .portal-icon-btn:hover { background: #E8EFFE; border-color: #C7D3F5; }
   .portal-icon-btn:focus-visible { outline: 2px solid #F5A524; outline-offset: 2px; }
   .portal-badge-dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: #EF5B4E; border: 1.5px solid #fff; }
-  .portal-content { padding: 26px 28px 40px; }
+  .portal-content { flex: 1; padding: 26px 28px 40px; }
   .notif-dropdown { position: absolute; top: 46px; right: 60px; width: 300px; background: #fff; border: 1px solid #E3E7EF; border-radius: 12px; box-shadow: 0 14px 30px rgba(18,33,63,.16); padding: 8px; z-index: 40; }
   .notif-item { padding: 9px 10px; border-radius: 8px; font-size: 12px; color: #12213F; }
   .notif-item:hover { background: #F3F5F9; }
@@ -214,6 +216,7 @@ export default function PortalLayout({ children }) {
   const { shipments, auditLogs } = useStore();
   const [search, setSearch] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+    const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   const section = SECTIONS.find((candidate) => candidate.key === user?.role) || SECTIONS[0];
   const displayName = user?.name || 'Guest User';
@@ -232,7 +235,15 @@ export default function PortalLayout({ children }) {
     }
   };
 
+    // The sign-out button only opens the confirmation pop-up now.
   const handleLogout = () => {
+    setShowNotifications(false);
+    setConfirmLogoutOpen(true);
+  };
+
+  // Runs only when the user clicks "Yes, log out".
+  const confirmLogout = () => {
+    setConfirmLogoutOpen(false);
     logout();
     navigate('/login', { replace: true });
   };
@@ -298,7 +309,14 @@ export default function PortalLayout({ children }) {
         </header>
 
         <div className="portal-content">{children}</div>
+        <Footer />
       </main>
+      <LogoutConfirmDialog
+        open={confirmLogoutOpen}
+        userName={displayName}
+        onConfirm={confirmLogout}
+        onCancel={() => setConfirmLogoutOpen(false)}
+      />
     </div>
   );
 }

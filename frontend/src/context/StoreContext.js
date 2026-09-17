@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import useAuth from '../hooks/useAuth';
 import appDataApi from '../api/appDataApi';
+import toast from 'react-hot-toast';
 
 const StoreContext = createContext(null);
 
@@ -381,6 +382,14 @@ export function StoreProvider({ children }) {
         setStoreError('');
         if (storeStatus === 'offline') setStoreStatus('ready');
       } catch (error) {
+        // 409 = the server refused the change because this screen was out of
+        // date (e.g. the chosen driver has gone offline). Show why, then load
+        // fresh data so the refused change is undone and the lists update.
+        if (error?.status === 409) {
+          toast.error(error.message || 'This change is out of date. Reloading the latest data.', { id: 'store-conflict' });
+          loadFromServer();
+          return;
+        }
         setSaveState('error');
         setStoreStatus('offline');
         setStoreError(error?.message || 'Could not save to the server');

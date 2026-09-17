@@ -76,6 +76,7 @@ import CustomerPaymentsPage from '../pages/customer/PaymentsPage';
 
 import BranchDashboardPage from '../pages/branch/BranchDashboardPage';
 import BranchShipmentsPage from '../pages/branch/BranchShipmentsPage';
+import PublicLayout from '../components/layout/PublicLayout';
 
 // Counter Staff is no longer an active role in this system (see
 // controllers/authController.js CREATABLE_ROLES) - the route below and its
@@ -98,26 +99,30 @@ export default function AppRoutes() {
   // BEFORE the authenticated routes below, since without it "/" falls
   // through to <PrivateRoute> and bounces an anonymous visitor to /login -
   // exactly the behaviour this portal must never have.
-  if (PORTAL_ROLE === 'customer') {
+    if (PORTAL_ROLE === 'customer') {
     return (
       <Routes>
-        <Route path="*" element={<PublicTrackingPage />} />
+        <Route element={<PublicLayout />}>
+          <Route path="*" element={<PublicTrackingPage />} />
+        </Route>
       </Routes>
     );
   }
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/track" element={<PublicTrackingPage />} />
-      <Route path="/unauthorized" element={<UnauthorizedPage />} />
-      {/* Anonymous-accessible marketing pages - deliberately at their own
-          paths, never at "/", so the existing authenticated "/" -> RoleHome
-          redirect chain below is completely untouched. */}
-      <Route path="/welcome" element={<HomePage />} />
-      <Route path="/contact-support" element={<ContactSupportPage />} />
+        <Route element={<PublicLayout />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/track" element={<PublicTrackingPage />} />
+        <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        {/* Anonymous-accessible marketing pages - deliberately at their own
+            paths, never at "/", so the existing authenticated "/" -> RoleHome
+            redirect chain below is completely untouched. */}
+        <Route path="/welcome" element={<HomePage />} />
+        <Route path="/contact-support" element={<ContactSupportPage />} />
+      </Route>
 
       <Route element={<PrivateRoute />}>
         <Route element={<RoleBasedRoute allowedRoles={ALL_ROLES} />}>
@@ -215,7 +220,9 @@ export default function AppRoutes() {
         </Route>
       </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
+      <Route element={<PublicLayout />}>
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
     </Routes>
   );
 }

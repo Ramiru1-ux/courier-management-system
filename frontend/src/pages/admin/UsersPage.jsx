@@ -10,6 +10,7 @@ import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
+import { getEmailError } from '../../utils/emailValidation';
 
 const emptyForm = { name: '', email: '', password: '', role: 'dispatcher', branch: '', merchantName: '' };
 
@@ -20,6 +21,7 @@ export default function UsersPage() {
   const [form, setForm] = useState(emptyForm);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -35,6 +37,11 @@ export default function UsersPage() {
     if (saving) return;
     if (!form.name || !form.email) {
       toast.error('Name and email are required.');
+      return;
+    }
+    const emailError = getEmailError(form.email);
+    if (emailError) {
+      toast.error(emailError);
       return;
     }
     if (!form.password || form.password.length < 6) {
@@ -75,11 +82,21 @@ export default function UsersPage() {
     toast.success(`${user.name} is now ${next.toLowerCase()}`);
   };
 
-  const confirmDelete = () => {
-    if (!pendingDelete) return;
-    removeUser(pendingDelete.id);
-    toast.success(`Removed ${pendingDelete.name}`);
-    setPendingDelete(null);
+    // Deletes the login account from MongoDB first, then removes the row from
+  // the list. If the server delete fails, the row stays so nothing is lost.
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
+    try {
+      if (pendingDelete.email) await authApi.deleteUserByEmail(pendingDelete.email);
+      removeUser(pendingDelete.id);
+      toast.success(`Removed ${pendingDelete.name}`);
+      setPendingDelete(null);
+    } catch (error) {
+      toast.error(error?.message || 'Could not delete the login account.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const columns = [
@@ -181,8 +198,9 @@ export default function UsersPage() {
         message={pendingDelete ? `Remove ${pendingDelete.name} from the system? This cannot be undone.` : ''}
         confirmLabel="Remove"
         danger
+        loading={deleting}
         onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={() => { if (!deleting) setPendingDelete(null); }}
       />
     </PortalLayout>
   );

@@ -91,6 +91,16 @@ function validateShipmentRecord(item, index, context = {}) {
 			if (isNewAssignment && driver.accountStatus === "Suspended") {
 				throw validationError(`${path("driverId")} refers to a suspended driver and cannot be assigned`, path("driverId"));
 			}
+
+			// A driver who switched themselves Offline cannot be given new
+			// work. Uses the driver's status as stored in MongoDB right now,
+			// so it also catches a dispatcher whose screen is out of date.
+			// 409 tells the frontend to reload fresh data (StoreContext.js).
+			if (isNewAssignment && driver.status === "Offline") {
+				const error = validationError(`${driver.name || item.driverId} is offline and cannot be assigned. Please choose an available driver.`, path("driverId"));
+				error.statusCode = 409;
+				throw error;
+			}
 		}
 	}
 

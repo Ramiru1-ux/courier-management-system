@@ -13,8 +13,12 @@ const axiosInstance = axios.create({
 });
 
 axiosInstance.interceptors.request.use((config) => {
-	const token = getStoredToken();
-	if (token) config.headers.Authorization = `Bearer ${token}`;
+	// Keep a token the request already set itself (logout sends the token of
+	// the session being closed, which is no longer in storage by then).
+	if (!config.headers.Authorization) {
+		const token = getStoredToken();
+		if (token) config.headers.Authorization = `Bearer ${token}`;
+	}
 	return config;
 });
 
