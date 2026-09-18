@@ -38,45 +38,23 @@ const APP_COLLECTIONS = {
   subscriptionPlans: "cms_subscription_plans",
 };
 
-// Legacy/domain collection names used by the backend models. The frontend
-// store uses the cms_* collections, so app-data writes mirror into these
-// collections as well for compatibility with the existing API modules.
+// "users" is the ONLY collection still mirrored outside the cms_* set. Every
+// other entry that used to live here (addresses, branches, vehicles,
+// invoices, shipments, webhooks, codtransactions, customers, deliveries,
+// driversettlements, hubs, merchants, merchantsettlements, notifications,
+// packages, permissions, pickups, pricingrules, proofofdeliveries, roles,
+// routes, servicezones, subscriptions, systemsettings, apikeys, complaints,
+// drivers, organizations, payments, ratings) fed a dedicated REST module
+// (backend/routes/*Routes.js + controllers/*Controller.js) that nothing -
+// not the frontend, not a scheduled job - ever actually called; removing
+// them here stops the duplicate plain-named collection each one produced
+// alongside its real cms_* counterpart. "users" stays because
+// authController.register()/login() read and write real login accounts
+// straight to this exact collection - it is not a legacy mirror, it is the
+// live auth store, so it keeps being kept in sync with the frontend's users
+// list below.
 const LEGACY_COLLECTIONS = {
-  addresses: "addresses",
-  apikeys: "apiKeys",
-  auditlogs: "auditLogs",
-  branches: "branches",
-  complaints: "complaints",
-  drivers: "drivers",
-  invoices: "invoices",
-  manifests: "manifests",
-  organizations: "organizations",
-  payments: "payments",
-  ratings: "ratings",
-  shipments: "shipments",
   users: "users",
-  vehicles: "vehicles",
-  webhooks: "webhooks",
-  // These collections are derived from the frontend lists with the same
-  // business meaning and are kept populated for legacy API consumers.
-  codtransactions: "codtransactions",
-  customers: "customers",
-  deliveries: "deliveries",
-  driversettlements: "driversettlements",
-  hubs: "hubs",
-  merchantsettlements: "merchantsettlements",
-  merchants: "merchants",
-  notifications: "notifications",
-  packages: "packages",
-  permissions: "permissions",
-  pickups: "pickups",
-  pricingrules: "pricingrules",
-  proofofdeliveries: "proofofdeliveries",
-  roles: "roles",
-  routes: "routes",
-  servicezones: "servicezones",
-  subscriptions: "subscriptions",
-  systemsettings: "systemsettings",
 };
 
 const APP_KEYS = Object.keys(APP_COLLECTIONS);

@@ -1,7 +1,6 @@
 const crypto = require("crypto");
 const User = require("../models/User");
 const LoginDetail = require("../models/LoginDetail");
-const AuditLog = require("../models/AuditLog");
 const generateToken = require("../utils/generateToken");
 const { createCrudController } = require("../utils/controllerFactory");
 const { getLockoutSecondsRemaining, recordFailedLogin, clearFailedLogins } = require("../utils/loginAttempts");
@@ -40,17 +39,6 @@ const publicUser = (user) => ({
 
 const bad = (res, status, message) => res.status(status).json({ success: false, message });
 
-/**
- * Records one login attempt (success or failure) as its own document in the
- * `auditlogs` collection - separate from the `users` collection, which only
- * ever holds the single most recent `lastLoginAt` per account and overwrites
- * it on every sign-in. This keeps the full history: every attempt, who it
- * was for, whether it succeeded, why it failed, and from where.
- *
- * Fire-and-forget on purpose (not awaited by callers) - a failure to write
- * the log must never block or fail the actual login response.
- */
-
 /** The caller's IP, without the "::ffff:" prefix Node adds to IPv4 addresses. */
 const clientIp = (req) => String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
 
@@ -78,20 +66,6 @@ const recordLoginDetail = async (req, { user = null, email, requestedRole = null
 	} catch (error) {
 		console.error("Could not save login details:", error.message);
 	}
-};
-
-const logLoginAttempt = (req, { email, success, reason, userId }) => {
-	AuditLog.create({
-		user: userId || undefined,
-		action: success ? "login_success" : "login_failed",
-		resource: "auth",
-		method: "POST",
-		path: req.originalUrl,
-		statusCode: success ? 200 : 401,
-		ipAddress: req.ip,
-		userAgent: req.get("user-agent"),
-		metadata: { email, reason },
-	}).catch((error) => console.error("Login audit log error:", error.message));
 };
 
 /**

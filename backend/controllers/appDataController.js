@@ -403,52 +403,9 @@ async function reconcileShipmentWrite(incoming, asOf) {
   return { items: [...unseen, ...items], keptFromDb };
 }
 
-const derivedRows = (collection, data) => {
-  const directRows = {
-    addresses: data.addresses,
-    apikeys: data.apiKeys,
-    auditlogs: data.auditLogs,
-    branches: data.branches,
-    complaints: data.complaints,
-    drivers: data.drivers,
-    invoices: data.invoices,
-    manifests: data.manifests,
-    organizations: data.organizations,
-    payments: data.payments,
-    ratings: data.ratings,
-    shipments: data.shipments,
-    users: data.users,
-    vehicles: data.vehicles,
-    webhooks: data.webhooks,
-  };
-  const sourceByCollection = {
-    codtransactions: data.settlements || [],
-    customers: (data.shipments || []).map((shipment) => ({
-      id: `customer-${shipment.recipientName || shipment.id}`,
-      name: shipment.recipientName,
-      phone: shipment.recipientPhone,
-      address: shipment.recipientAddress,
-      city: shipment.recipientCity,
-    })),
-    deliveries: (data.shipments || []).filter((shipment) => shipment.driverId),
-    driversettlements: data.driverReconciliation || [],
-    hubs: data.branches || [],
-    merchantsettlements: data.settlements || [],
-    merchants: (data.settlements || []).map((settlement) => ({ id: `merchant-${settlement.merchant}`, name: settlement.merchant })),
-    notifications: data.notificationsOutbox || [],
-    packages: (data.shipments || []).map((shipment) => ({ id: `package-${shipment.id}`, shipmentId: shipment.id, trackingNumber: shipment.trackingNumber, weight: shipment.weight, value: shipment.codAmount })),
-    permissions: [],
-    pickups: (data.shipments || []).filter((shipment) => shipment.status === "CREATED"),
-    pricingrules: data.pricingRules || [],
-    proofofdeliveries: data.podRecords || [],
-    roles: [...new Set((data.users || []).map((user) => user.role))].filter(Boolean).map((role) => ({ id: `role-${role}`, name: role })),
-    routes: data.manifests || [],
-    servicezones: data.zones || [],
-    subscriptions: data.organizations || [],
-    systemsettings: [],
-  };
-  return sourceByCollection[collection] || directRows[collection] || [];
-};
+// Only "users" is still mirrored (see LEGACY_COLLECTIONS in models/appData.js
+// for why), so this only ever needs to resolve that one key.
+const derivedRows = (collection, data) => (collection === "users" ? data.users : null) || [];
 
 /**
  * Mirrors the frontend's lists into the legacy/domain collections. Unlike

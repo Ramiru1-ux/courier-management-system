@@ -4,7 +4,6 @@ const routeFiles = {
 	"/addresses": "./addressRoutes",
 	"/app-data": "./appDataRoutes",
 	"/api-keys": "./apiKeyRoutes",
-	"/audit-logs": "./auditLogRoutes",
 	"/auth": "./authRoutes",
 	"/branches": "./branchRoutes",
 	"/cod": "./codRoutes",

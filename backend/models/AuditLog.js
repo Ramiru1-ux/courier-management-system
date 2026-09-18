@@ -1,2 +1,0 @@
-const { createModel, mongoose } = require("../utils/modelFactory");
-module.exports = createModel("AuditLog", { user: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, action: String, resource: String, method: String, path: String, statusCode: Number, durationMs: Number, ipAddress: String, userAgent: String, metadata: mongoose.Schema.Types.Mixed }, { defaultStatus: "recorded", indexes: [{ createdAt: -1 }, { action: 1 }] });
