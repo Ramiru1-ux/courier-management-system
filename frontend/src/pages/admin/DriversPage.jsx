@@ -11,7 +11,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
 import { getEmailError } from '../../utils/emailValidation';
-import { getNameError, filterNameInput } from '../../utils/textValidation';
+import { getNameError, filterNameInput, filterPhoneInput } from '../../utils/textValidation';
 
 const emptyForm = { name: '', email: '', phone: '', branch: '', vehicle: '', vehicleType: 'Motorbike', vehicleModel: '', vehicleCapacity: '', insuranceExpiry: '', password: '' };
 
@@ -29,11 +29,16 @@ export default function DriversPage() {
     return drivers.filter((driver) => [driver.id, driver.name, driver.email, driver.phone, driver.branch, driver.vehicle, driver.status].join(' ').toLowerCase().includes(term));
   }, [drivers, query]);
 
-  // A driver's name takes letters only, filtered as it is typed (see
-  // utils/textValidation.js); every other field is left as entered.
+  // A driver's name takes letters only and the phone number takes up to 10
+  // digits, both filtered as they are typed (see utils/textValidation.js);
+  // every other field is left as entered.
   const update = (event) => setForm((current) => ({
     ...current,
-    [event.target.name]: event.target.name === 'name' ? filterNameInput(event.target.value) : event.target.value,
+    [event.target.name]: event.target.name === 'name'
+      ? filterNameInput(event.target.value)
+      : event.target.name === 'phone'
+        ? filterPhoneInput(event.target.value)
+        : event.target.value,
   }));
 
   const handleCreate = async (event) => {
@@ -157,7 +162,7 @@ export default function DriversPage() {
       <Modal open={open} onClose={() => setOpen(false)} title="Add driver" description="Create a driver profile and portal login credentials." footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" type="submit" form="driver-form">Create driver</Button></>}>
         <form id="driver-form" onSubmit={handleCreate} style={{ display: 'grid', gap: 12 }}>
           {[['name', 'Full name', 'Kasun Jayawardena', 'text'], ['email', 'Email address', 'driver@egotechworld.com', 'email'], ['phone', 'Phone number', '077 112 3344', 'tel'], ['vehicle', 'Vehicle registration', 'LK-6612', 'text'], ['vehicleModel', 'Vehicle model', 'Honda Dio', 'text'], ['vehicleCapacity', 'Vehicle capacity', '20 kg', 'text']].map(([name, label, placeholder, type]) => (
-            <div key={name}><label htmlFor={`driver-${name}`} style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#697086' }}>{label}</label><input id={`driver-${name}`} name={name} type={type} value={form[name]} onChange={update} placeholder={placeholder} required={name === 'name' || name === 'email'} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} /></div>
+            <div key={name}><label htmlFor={`driver-${name}`} style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#697086' }}>{label}</label><input id={`driver-${name}`} name={name} type={type} value={form[name]} onChange={update} placeholder={placeholder} required={name === 'name' || name === 'email'} maxLength={name === 'phone' ? 10 : undefined} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} /></div>
           ))}
           <div><label htmlFor="driver-vehicleType" style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#697086' }}>Vehicle type</label><select id="driver-vehicleType" name="vehicleType" value={form.vehicleType} onChange={update} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}><option>Motorbike</option><option>Three-wheeler</option><option>Van</option><option>Truck</option></select></div>
           <div><label htmlFor="driver-insuranceExpiry" style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 600, color: '#697086' }}>Insurance expiry</label><input id="driver-insuranceExpiry" name="insuranceExpiry" type="date" value={form.insuranceExpiry} onChange={update} required={Boolean(form.vehicle)} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }} /></div>

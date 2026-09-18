@@ -58,5 +58,10 @@ export const filterAddressInput = (value) => String(value ?? '')
   .filter((character) => !BLOCKED_ADDRESS_SYMBOLS.includes(character))
   .join('');
 
+/** Keeps only digits from a phone number, as it is typed, capped at 10. */
+export const filterPhoneInput = (value) => String(value ?? '')
+  .replace(/\D/g, '')
+  .slice(0, 10);
+
 export const isValidName = (value) => getNameError(value) === '';
 export const isValidAddress = (value) => getAddressError(value) === '';
