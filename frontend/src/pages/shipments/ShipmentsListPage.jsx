@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import PortalLayout from '../../components/layout/PortalLayout';
 import SearchBar from '../../components/common/SearchBar';
 import Table from '../../components/common/Table';
 import StatusBadge from '../../components/common/StatusBadge';
 import Button from '../../components/common/Button';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import useAuth from '../../hooks/useAuth';
 import { statusLabel, statusTone, formatLKR } from '../../utils/shipmentStatus';
@@ -21,12 +23,28 @@ const STATUS_OPTIONS = ['All', 'CREATED', 'PICKED_UP', 'AT_ORIGIN_BRANCH', 'OUT_
 const VIEW_ONLY_ROLES = new Set(['customer', 'finance', 'dispatcher']);
 
 export default function ShipmentsListPage() {
-  const { shipments, drivers } = useStore();
+  const { shipments, drivers, removeShipment } = useStore();
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
+  const [pendingDelete, setPendingDelete] = useState(null);
+
+  // This page is shared by every role that can view shipments, so deleting
+  // one is kept to admin - the only role whose write of BOTH shipments and
+  // manifests the server accepts, so the shipment and the manifest entries
+  // pointing at it are always removed together (see ADMIN_ONLY_WRITE_KEYS in
+  // backend/controllers/appDataController.js). A dispatcher deletes their
+  // own unassigned shipments from the Pending deliveries page instead.
+  const canDelete = user?.role === 'admin';
 
   const driverName = (id) => (drivers.find((d) => d.id === id) || {}).name || 'Unassigned';
+
+  const handleDelete = () => {
+    if (!pendingDelete) return;
+    removeShipment(pendingDelete.id);
+    toast.success(`${pendingDelete.trackingNumber} deleted`);
+    setPendingDelete(null);
+  };
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -43,6 +61,7 @@ export default function ShipmentsListPage() {
     { key: 'driver', label: 'Driver' },
     { key: 'status', label: 'Status' },
     { key: 'cod', label: 'COD' },
+    ...(canDelete ? [{ key: 'actions', label: '' }] : []),
   ];
 
   return (
@@ -83,8 +102,25 @@ export default function ShipmentsListPage() {
             <td>{driverName(shipment.driverId)}</td>
             <td><StatusBadge status={statusLabel(shipment.status)} tone={statusTone(shipment.status)} /></td>
             <td>{shipment.codAmount ? formatLKR(shipment.codAmount) : '—'}</td>
+            {canDelete && (
+              <td style={{ textAlign: 'right' }}>
+                <Button size="small" variant="danger" icon={Trash2} onClick={() => setPendingDelete(shipment)}>Delete</Button>
+              </td>
+            )}
           </tr>
         )}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete shipment"
+        message={pendingDelete
+          ? `Delete ${pendingDelete.trackingNumber} for ${pendingDelete.recipientName}? The shipment is removed permanently and stops being tracked. Any payment or settlement already recorded against it is kept.`
+          : ''}
+        confirmLabel="Delete shipment"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setPendingDelete(null)}
       />
     </PortalLayout>
   );

@@ -22,6 +22,22 @@ function friendlyTime() {
   return new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+function friendlyDate(date = new Date()) {
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// "2026-09" for a shipment's date - the billing period an invoice covers.
+function monthKey(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 7) : date.toISOString().slice(0, 7);
+}
+
+// Stable, sortable key for "which day's cash is this" - the displayed date is
+// for people, this is what the code matches on.
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function seedData() {
   const addresses = [
     { id: 'ADDR-01', merchant: 'Urban Mart', label: 'Main warehouse', address: 'No. 5, Union Place', city: 'Colombo 2', contact: 'Store Manager', phone: '011 234 5566' },
@@ -314,6 +330,185 @@ function nextTrackingNumber() {
   return `EGW-2026-${String(unique).padStart(8, '0')}`;
 }
 
+/**
+ * The courier's own fee, charged to the merchant, expressed as a share of the
+ * COD it handled for them. COD itself is the customer's money passing
+ * through - this is the only part the courier actually earns, and it is what
+ * merchant invoices bill for. One constant so the rate can be changed in a
+ * single place.
+ */
+const COURIER_FEE_RATE = 0.05;
+
+/**
+ * A completed COD delivery is a financial event, and these are the records it
+ * produces. Each one is added only if it is missing, matched on the
+ * shipment's tracking number, which is what makes every function here safe to
+ * call repeatedly - from the delivery paths as they happen, and from the
+ * backfill on load for deliveries that happened before any of this existed.
+ *
+ *   - a merchant settlement - money now owed to whoever sent the parcel.
+ *     `collected` starts at 0 because the cash is still in the driver's
+ *     pocket; it only becomes collected once finance reconciles it.
+ *   - a driver reconciliation entry - cash that driver is holding and has to
+ *     hand in. One entry per driver per day, so a driver finishing six COD
+ *     deliveries owes one summed amount rather than six separate rows.
+ *   - a payment - the customer's side of the same event, which is what makes
+ *     the money show up as received rather than only as a debt.
+ */
+function bookCodSettlement(current, shipment, cod, reference) {
+  if (current.settlements.some((s) => s.reference === reference)) return current;
+
+  const settlement = {
+    id: nextId('SET', current.settlements),
+    merchant: shipment.senderName || 'Unknown sender',
+    reference,
+    due: friendlyDate(),
+    expected: cod,
+    collected: 0,
+    status: 'Pending',
+  };
+
+  let driverReconciliation = current.driverReconciliation;
+  const driver = current.drivers.find((d) => d.id === shipment.driverId);
+  if (driver) {
+    const key = todayKey();
+    const openEntry = driverReconciliation.find((r) => r.driver === driver.name && r.dateKey === key);
+    driverReconciliation = openEntry
+      ? driverReconciliation.map((r) => (r === openEntry ? { ...r, expected: (Number(r.expected) || 0) + cod } : r))
+      : [{
+        id: nextId('REC', driverReconciliation),
+        driver: driver.name,
+        date: friendlyDate(),
+        dateKey: key,
+        expected: cod,
+        collected: 0,
+        status: 'Pending',
+      }, ...driverReconciliation];
+  }
+
+  return { ...current, settlements: [settlement, ...current.settlements], driverReconciliation };
+}
+
+function bookCodPayment(current, shipment, cod, reference) {
+  if (current.payments.some((p) => p.reference === reference && p.method === 'COD')) return current;
+  return {
+    ...current,
+    payments: [{
+      id: nextId('PAY', current.payments),
+      reference,
+      method: 'COD',
+      amount: cod,
+      status: 'Completed',
+      date: friendlyDate(),
+    }, ...current.payments],
+  };
+}
+
+/**
+ * A parcel the courier lost or damaged is money it owes the customer, so it
+ * raises a refund for finance to approve or reject. Only these two outcomes
+ * do: a failed or returned delivery moves no money at all under COD - the
+ * customer never paid - so raising a refund for one would overstate what is
+ * owed.
+ */
+function bookLossRefund(current, shipment, reference) {
+  if (current.refunds.some((r) => r.reference === reference)) return current;
+  const amount = Number(shipment.codAmount) || 0;
+  if (amount <= 0) return current;
+  return {
+    ...current,
+    refunds: [{
+      id: nextId('REF', current.refunds),
+      reference,
+      customer: shipment.recipientName || 'Unknown recipient',
+      amount,
+      reason: shipment.status === 'LOST' ? 'Parcel lost in transit' : 'Parcel damaged in transit',
+      status: 'Pending',
+      date: friendlyDate(),
+    }, ...current.refunds],
+  };
+}
+
+/**
+ * Rebuilds the merchant invoices for the courier fee (COURIER_FEE_RATE above),
+ * one per merchant per calendar month of delivered COD.
+ *
+ * Recomputed rather than only appended to, so a second delivery in the same
+ * month raises that month's bill instead of creating a duplicate invoice. An
+ * invoice already marked Paid is never touched - money that has changed hands
+ * must not be rewritten underneath finance.
+ */
+function rebuildInvoices(current) {
+  const codByMerchantMonth = new Map();
+  for (const shipment of current.shipments || []) {
+    if (shipment?.status !== 'DELIVERED') continue;
+    const cod = Number(shipment.codAmount) || 0;
+    if (cod <= 0) continue;
+    const key = `${shipment.senderName || 'Unknown sender'}|${monthKey(shipment.createdAt)}`;
+    codByMerchantMonth.set(key, (codByMerchantMonth.get(key) || 0) + cod);
+  }
+
+  let invoices = current.invoices;
+  for (const [key, codTotal] of codByMerchantMonth) {
+    const separator = key.lastIndexOf('|');
+    const merchant = key.slice(0, separator);
+    const period = key.slice(separator + 1);
+    const amount = Math.round(codTotal * COURIER_FEE_RATE);
+    const existing = invoices.find((inv) => inv.merchant === merchant && inv.period === period);
+
+    if (!existing) {
+      const start = new Date(`${period}-01T00:00:00Z`);
+      const due = new Date(start);
+      due.setUTCDate(due.getUTCDate() + 7);
+      invoices = [{
+        id: nextId('INV', invoices),
+        merchant,
+        period,
+        amount,
+        date: friendlyDate(start),
+        dueDate: friendlyDate(due),
+        status: 'Unpaid',
+      }, ...invoices];
+    } else if (existing.status !== 'Paid' && existing.amount !== amount) {
+      invoices = invoices.map((inv) => (inv === existing ? { ...inv, amount } : inv));
+    }
+  }
+
+  return invoices === current.invoices ? current : { ...current, invoices };
+}
+
+/** Every finance record one shipment owes, in its current state. */
+function bookFinanceForShipment(current, shipment) {
+  const reference = shipment?.trackingNumber;
+  if (!reference) return current;
+
+  let next = current;
+  const cod = Number(shipment.codAmount) || 0;
+
+  if (shipment.status === 'DELIVERED' && cod > 0) {
+    next = bookCodSettlement(next, shipment, cod, reference);
+    next = bookCodPayment(next, shipment, cod, reference);
+  }
+  if (shipment.status === 'LOST' || shipment.status === 'DAMAGED') {
+    next = bookLossRefund(next, shipment, reference);
+  }
+  return rebuildInvoices(next);
+}
+
+/**
+ * Books every shipment that reached a financial outcome before these rules
+ * existed. Without it the dashboard would stay at Rs 0 until the next
+ * delivery, while money genuinely collected stayed invisible. Idempotent, so
+ * running it on every load only ever fills in what is missing.
+ */
+function backfillFinanceRecords(data) {
+  let next = data;
+  for (const shipment of data.shipments || []) {
+    next = bookFinanceForShipment(next, shipment);
+  }
+  return next;
+}
+
 // Same keys as seedData(), all empty. Used only while signed out, so pages
 // rendered without a session (login, public tracking, forgot/reset
 // password) get a defined-but-inert store instead of a null one, without
@@ -349,6 +544,8 @@ export function StoreProvider({ children }) {
   const asOfRef = useRef('');
   const userIdRef = useRef(user?.id);
   userIdRef.current = user?.id;
+  const userRoleRef = useRef(user?.role);
+  userRoleRef.current = user?.role;
   const storeStatusRef = useRef(storeStatus);
   storeStatusRef.current = storeStatus;
 
@@ -372,11 +569,25 @@ export function StoreProvider({ children }) {
       // gets written up; otherwise show exactly what the server returned.
       const next = isEmpty ? seedData() : mergeWithShape(remote);
 
+      // Deliveries completed before COD was booked automatically still need
+      // their settlement and reconciliation records. Only admin and finance
+      // do this: they are the only roles the server accepts settlement and
+      // reconciliation writes from (FINANCE_WRITE_KEYS in
+      // backend/controllers/appDataController.js), and they are the only
+      // roles given the full, unscoped shipments list to work them out from.
+      // Anyone else would compute records from their own narrow slice of the
+      // data, show them on screen, and have every one of them refused.
+      const canBookCod = ['admin', 'finance'].includes(String(userRoleRef.current || '').toLowerCase());
+      const booked = canBookCod ? backfillFinanceRecords(next) : next;
+
+      // Recorded as the server's state, NOT as `booked` - anything the
+      // backfill just added is genuinely unsaved, so leaving it out here is
+      // what makes the normal debounced save pick it up and persist it.
       lastSavedRef.current = JSON.stringify(next);
       lastSavedByKeyRef.current = markAllSaved(next);
-      latestRef.current = next;
-      writeBackup(next, userIdRef.current);
-      setData(next);
+      latestRef.current = booked;
+      writeBackup(booked, userIdRef.current);
+      setData(booked);
       setStoreStatus('ready');
       setSaveState('saved');
 
@@ -645,7 +856,11 @@ export function StoreProvider({ children }) {
           drivers = current.drivers.map((driver) => (driver.id === changed.driverId && driver.status === 'Delivering' ? { ...driver, status: 'Available' } : driver));
         }
       }
-      return { ...current, shipments, drivers };
+      const next = { ...current, shipments, drivers };
+      // Reaching DELIVERED, LOST or DAMAGED is a financial event, not just a
+      // status change - see bookFinanceForShipment above.
+      const updated = shipments.find((s) => s.id === shipmentId);
+      return updated ? bookFinanceForShipment(next, updated) : next;
     });
     logAction('Shipment status updated', `${shipmentId} -> ${status}`);
     const trigger = STATUS_TRIGGERS[status];
@@ -825,6 +1040,30 @@ export function StoreProvider({ children }) {
     logAction('Invoice paid', invoiceId);
   }, [logAction]);
 
+  /**
+   * Raises a refund by hand from the Refunds page.
+   *
+   * Refunds appear on their own when a parcel is marked lost or damaged, but
+   * that is an operations action: the buttons for it are admin/dispatcher
+   * only, and the server refuses a shipments write from finance
+   * (FINANCE_EXCLUDED_WRITE_KEYS in backend/controllers/appDataController.js).
+   * Without this, a finance officer could approve or reject refunds but had
+   * no way to raise one - so every other adjustment they legitimately deal
+   * with (an overcharge, a goodwill credit, a part refund) had nowhere to go.
+   */
+  const addRefund = useCallback((input) => {
+    setData((current) => ({
+      ...current,
+      refunds: [{
+        id: nextId('REF', current.refunds),
+        status: 'Pending',
+        date: friendlyDate(),
+        ...input,
+      }, ...current.refunds],
+    }));
+    logAction('Refund raised', `${input.reference} - ${input.reason || 'no reason given'}`);
+  }, [logAction]);
+
   const decideRefund = useCallback((refundId, decision) => {
     setData((current) => ({
       ...current,
@@ -844,6 +1083,40 @@ export function StoreProvider({ children }) {
   const returnToOrigin = useCallback((shipmentId, reason) => {
     updateShipmentStatus(shipmentId, 'RTO', `Returned to origin - ${reason || 'maximum delivery attempts reached'}`);
   }, [updateShipmentStatus]);
+
+  /**
+   * Deletes a shipment outright. Same shape as removeDriver/removeVehicle
+   * above: the record goes, and every other list that points at it is tidied
+   * up in the same update so nothing is left referring to a shipment that no
+   * longer exists - a manifest would otherwise keep counting it (manifests
+   * reference shipments by trackingNumber, not id), and a rating or POD
+   * record would be stranded against a missing shipment.
+   *
+   * Financial records (payments, settlements, refunds) are deliberately left
+   * alone: they reference a shipment by tracking number but are their own
+   * accounting history, not part of the shipment, so deleting a shipment
+   * must not quietly erase money that was taken or owed.
+   */
+  const removeShipment = useCallback((shipmentId) => {
+    let removed = null;
+    setData((current) => {
+      removed = current.shipments.find((s) => s.id === shipmentId) || null;
+      if (!removed) return current;
+      const trackingNumber = removed.trackingNumber;
+      return {
+        ...current,
+        shipments: current.shipments.filter((s) => s.id !== shipmentId),
+        manifests: current.manifests.map((manifest) => (
+          Array.isArray(manifest.shipmentIds) && manifest.shipmentIds.includes(trackingNumber)
+            ? { ...manifest, shipmentIds: manifest.shipmentIds.filter((t) => t !== trackingNumber) }
+            : manifest
+        )),
+        ratings: current.ratings.filter((rating) => rating.shipmentId !== shipmentId),
+        podRecords: current.podRecords.filter((record) => record.shipmentId !== shipmentId),
+      };
+    });
+    logAction('Shipment deleted', removed?.trackingNumber || shipmentId);
+  }, [logAction]);
 
   const addVehicle = useCallback((input) => {
     setData((current) => ({
@@ -987,7 +1260,13 @@ export function StoreProvider({ children }) {
           drivers = current.drivers.map((d) => (d.id === shipment.driverId && d.status === 'Delivering' ? { ...d, status: 'Available' } : d));
         }
       }
-      return { ...current, podRecords: [record, ...current.podRecords], shipments, drivers };
+      // Capturing proof of delivery marks the shipment DELIVERED here rather
+      // than going through updateShipmentStatus, so the COD booking has to
+      // happen on this path too - a driver completing a round in their own
+      // portal is exactly how most COD cash is actually collected.
+      const next = { ...current, podRecords: [record, ...current.podRecords], shipments, drivers };
+      const delivered = shipments.find((s) => s.id === shipmentId);
+      return delivered ? bookFinanceForShipment(next, delivered) : next;
     });
     logAction('Proof of delivery captured', shipmentId);
   }, [logAction]);
@@ -1124,10 +1403,12 @@ export function StoreProvider({ children }) {
     markSettlementReview,
     reconcileDriverEntry,
     payInvoice,
+    addRefund,
     decideRefund,
     reportDamage,
     markLost,
     returnToOrigin,
+    removeShipment,
     addVehicle,
     setVehicleStatus,
     removeVehicle,
@@ -1153,7 +1434,7 @@ export function StoreProvider({ children }) {
     pushNotification,
     resetDemoData,
     logAction,
-  }), [data, storeStatus, storeError, saveState, reloadStore, createShipment, updateShipmentStatus, setShipmentCoordinates, assignDriver, toggleDriverAvailability, addDriver, setDriverAccountStatus, removeDriver, addUser, setUserStatus, removeUser, addBranch, toggleBranchStatus, addAddress, removeAddress, createSettlement, markSettlementCleared, markSettlementReview, reconcileDriverEntry, payInvoice, decideRefund, reportDamage, markLost, returnToOrigin, addVehicle, setVehicleStatus, removeVehicle, createManifest, advanceManifest, addPricingRule, addZone, toggleZoneStatus, updateNotificationTemplate, setTicketStatus, setComplaintStatus, addSupportTicket, addComplaint, capturePOD, addRating, generateApiKey, revokeApiKey, addWebhook, toggleWebhookStatus, testWebhook, setOrgPlan, processSandboxPayment, pushNotification, resetDemoData, logAction]);
+  }), [data, storeStatus, storeError, saveState, reloadStore, createShipment, updateShipmentStatus, setShipmentCoordinates, assignDriver, toggleDriverAvailability, addDriver, setDriverAccountStatus, removeDriver, addUser, setUserStatus, removeUser, addBranch, toggleBranchStatus, addAddress, removeAddress, createSettlement, markSettlementCleared, markSettlementReview, reconcileDriverEntry, payInvoice, addRefund, decideRefund, reportDamage, markLost, returnToOrigin, removeShipment, addVehicle, setVehicleStatus, removeVehicle, createManifest, advanceManifest, addPricingRule, addZone, toggleZoneStatus, updateNotificationTemplate, setTicketStatus, setComplaintStatus, addSupportTicket, addComplaint, capturePOD, addRating, generateApiKey, revokeApiKey, addWebhook, toggleWebhookStatus, testWebhook, setOrgPlan, processSandboxPayment, pushNotification, resetDemoData, logAction]);
 
   return (
     <StoreContext.Provider value={value}>

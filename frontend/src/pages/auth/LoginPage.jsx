@@ -112,7 +112,11 @@ export default function LoginPage() {
   const { login, isAuthenticated, user } = useAuth();
   const defaultRole = PORTAL_ROLE || 'admin';
   const [role, setRole] = useState(defaultRole);
-  const [form, setForm] = useState({ email: AUTH_ACCOUNTS[defaultRole].email, password: '', remember: true });
+  // The email starts empty and is never filled in for the user. It used to be
+  // pre-filled with the selected portal's account address, which put a real
+  // sign-in address on screen for anyone who opened the page and meant each
+  // portal in the dropdown advertised its own account.
+  const [form, setForm] = useState({ email: '', password: '', remember: true });
   const [error, setError] = useState('');
   const [stage, setStage] = useState('credentials'); // credentials | otp
   const [otpCode, setOtpCode] = useState('');
@@ -149,7 +153,8 @@ export default function LoginPage() {
   const handleRoleChange = (nextRoleId) => {
     const nextRole = AUTH_ACCOUNTS[nextRoleId] || AUTH_ACCOUNTS[defaultRole];
     setRole(nextRole.id);
-    setForm((prev) => ({ ...prev, email: nextRole.email }));
+    // Whatever the user has typed is left alone - switching portal neither
+    // fills the email in nor throws away an address they already entered.
     setError('');
     setStage('credentials');
   };
@@ -268,7 +273,7 @@ export default function LoginPage() {
 
               <div className="field">
                 <label htmlFor="email">Email address</label>
-                <input id="email" name="email" type="email" value={form.email} onChange={handleChange} placeholder="you@egotechworld.com" required />
+                <input id="email" name="email" type="email" value={form.email} onChange={handleChange} placeholder="Enter your email" required />
               </div>
 
               <div className="field">

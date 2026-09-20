@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Plus, Trash2 } from 'lucide-react';
+import { Ban, CheckCircle2, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
 import PortalLayout from '../../components/layout/PortalLayout';
 import Table from '../../components/common/Table';
 import Button from '../../components/common/Button';
@@ -10,18 +10,44 @@ import StatusBadge from '../../components/common/StatusBadge';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import useStore from '../../hooks/useStore';
 import authApi from '../../api/authApi';
+import { updateDriverAvailability } from '../../api/appDataApi';
 import { getEmailError } from '../../utils/emailValidation';
 import { getNameError, filterNameInput, filterPhoneInput } from '../../utils/textValidation';
 
 const emptyForm = { name: '', email: '', phone: '', branch: '', vehicle: '', vehicleType: 'Motorbike', vehicleModel: '', vehicleCapacity: '', insuranceExpiry: '', password: '' };
 
 export default function DriversPage() {
-  const { drivers, branches, addDriver, setDriverAccountStatus, removeDriver } = useStore();
+  const { drivers, branches, addDriver, setDriverAccountStatus, removeDriver, reloadStore } = useStore();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [pendingAction, setPendingAction] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [availabilityBusyId, setAvailabilityBusyId] = useState('');
+
+  /**
+   * Puts a driver online (Available) or offline, through the dedicated
+   * availability endpoint. It has to go through that endpoint and not the
+   * normal store update: the server always restores driver availability from
+   * its own copy when a staff browser saves the drivers list (see
+   * keepDriverAvailabilityFromDb in backend/controllers/appDataController.js),
+   * so a change made the ordinary way would show here and then revert on the
+   * next reload. The store is reloaded afterwards so the row shows what the
+   * server actually recorded rather than an assumed result.
+   */
+  const handleAvailability = async (driver) => {
+    const next = driver.status === 'Offline' ? 'Available' : 'Offline';
+    setAvailabilityBusyId(driver.id);
+    try {
+      await updateDriverAvailability(driver.id, next);
+      await reloadStore();
+      toast.success(`${driver.name} is now ${next === 'Available' ? 'online' : 'offline'}`);
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || 'Could not change availability.');
+    } finally {
+      setAvailabilityBusyId('');
+    }
+  };
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -150,6 +176,16 @@ export default function DriversPage() {
             <td><StatusBadge status={driver.status} tone={driver.status === 'Available' ? 'teal' : driver.status === 'Delivering' ? 'amber' : 'neutral'} /></td>
             <td><StatusBadge status={driver.accountStatus || 'Active'} tone={(driver.accountStatus || 'Active') === 'Active' ? 'teal' : 'coral'} /></td>
             <td style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button
+                size="small"
+                variant="secondary"
+                icon={driver.status === 'Offline' ? Power : PowerOff}
+                loading={availabilityBusyId === driver.id}
+                disabled={Boolean(availabilityBusyId)}
+                onClick={() => handleAvailability(driver)}
+              >
+                {driver.status === 'Offline' ? 'Set online' : 'Set offline'}
+              </Button>
               <Button size="small" variant="secondary" icon={(driver.accountStatus || 'Active') === 'Active' ? Ban : CheckCircle2} onClick={() => setPendingAction({ driver, action: 'status' })}>
                 {(driver.accountStatus || 'Active') === 'Active' ? 'Deactivate' : 'Activate'}
               </Button>

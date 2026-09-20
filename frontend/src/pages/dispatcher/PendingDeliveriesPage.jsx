@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Truck } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import PortalLayout from '../../components/layout/PortalLayout';
 import Table from '../../components/common/Table';
 import Button from '../../components/common/Button';
-import Modal from '../../components/common/Modal';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import SearchBar from '../../components/common/SearchBar';
 import StatusBadge from '../../components/common/StatusBadge';
 import EmptyState from '../../components/common/EmptyState';
@@ -12,10 +12,9 @@ import useStore from '../../hooks/useStore';
 import { statusLabel, statusTone } from '../../utils/shipmentStatus';
 
 export default function PendingDeliveriesPage() {
-  const { shipments, drivers, assignDriver } = useStore();
+  const { shipments, removeShipment } = useStore();
   const [query, setQuery] = useState('');
-  const [target, setTarget] = useState(null);
-  const [driverChoice, setDriverChoice] = useState('');
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const pending = useMemo(() => {
     const list = shipments.filter((s) => !s.driverId && ['CREATED', 'PICKED_UP', 'AT_ORIGIN_BRANCH'].includes(s.status));
@@ -24,18 +23,11 @@ export default function PendingDeliveriesPage() {
     return list.filter((s) => [s.trackingNumber, s.recipientName, s.recipientCity].join(' ').toLowerCase().includes(term));
   }, [shipments, query]);
 
-  const availableDrivers = drivers.filter((d) => d.status !== 'Delivering' && d.status !== 'Offline');
-
-  const openAssign = (shipment) => {
-    setTarget(shipment);
-    setDriverChoice('');
-  };
-
-  const handleAssign = () => {
-    if (!target || !driverChoice) return;
-    assignDriver(target.id, driverChoice);
-    toast.success(`${target.trackingNumber} assigned and dispatched`);
-    setTarget(null);
+  const handleDelete = () => {
+    if (!pendingDelete) return;
+    removeShipment(pendingDelete.id);
+    toast.success(`${pendingDelete.trackingNumber} deleted`);
+    setPendingDelete(null);
   };
 
   const columns = [
@@ -72,33 +64,22 @@ export default function PendingDeliveriesPage() {
               <td>{s.recipientCity}</td>
               <td><StatusBadge status={statusLabel(s.status)} tone={statusTone(s.status)} /></td>
               <td style={{ textAlign: 'right' }}>
-                <Button size="small" variant="accent" icon={Truck} onClick={() => openAssign(s)}>Assign</Button>
+                <Button size="small" variant="danger" icon={Trash2} onClick={() => setPendingDelete(s)}>Delete</Button>
               </td>
             </tr>
           )}
         />
       )}
 
-      <Modal
-        open={Boolean(target)}
-        onClose={() => setTarget(null)}
-        title="Assign a driver"
-        description={target ? `Choose an available driver for ${target.trackingNumber}.` : ''}
-        footer={<><Button variant="secondary" onClick={() => setTarget(null)}>Cancel</Button><Button variant="primary" onClick={handleAssign} disabled={!driverChoice}>Assign & dispatch</Button></>}
-      >
-        <div style={{ display: 'grid', gap: 8 }}>
-          {availableDrivers.length === 0 && <div style={{ color: '#697086', fontSize: 13 }}>No drivers are currently available.</div>}
-          {availableDrivers.map((d) => (
-            <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: `1.5px solid ${driverChoice === d.id ? '#F5A524' : '#E3E7EF'}`, borderRadius: 10, cursor: 'pointer' }}>
-              <input type="radio" name="driver" value={d.id} checked={driverChoice === d.id} onChange={() => setDriverChoice(d.id)} />
-              <span>
-                <div style={{ fontWeight: 600, fontSize: 13, color: '#12213F' }}>{d.name}</div>
-                <div style={{ fontSize: 11, color: '#9AA1B4' }}>{d.branch} · {d.vehicle} · {d.status}</div>
-              </span>
-            </label>
-          ))}
-        </div>
-      </Modal>
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete shipment"
+        message={pendingDelete ? `Delete ${pendingDelete.trackingNumber} for ${pendingDelete.recipientName}? The shipment is removed permanently and stops being tracked.` : ''}
+        confirmLabel="Delete shipment"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </PortalLayout>
   );
 }

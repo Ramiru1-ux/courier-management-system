@@ -123,7 +123,7 @@ const styles = `
 
 export default function LoginForm({ onSubmit, onDemoClick, onForgotPassword }) {
   const [form, setForm] = useState({
-    email: 'admin@egotechworld.com',
+    email: '',
     password: '',
     remember: true,
   });
@@ -158,7 +158,7 @@ export default function LoginForm({ onSubmit, onDemoClick, onForgotPassword }) {
           type="email"
           value={form.email}
           onChange={handleChange}
-          placeholder="admin@egotechworld.com"
+          placeholder="Enter your email"
         />
       </div>
 

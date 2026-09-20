@@ -868,11 +868,23 @@ const updateDriverLocation = async (req, res) => {
 };
 
 /**
- * PUT /api/app-data/drivers/:id/availability - a driver setting their own
+ * PUT /api/app-data/drivers/:id/availability - setting a driver's
  * OPERATIONAL AVAILABILITY (Available / Offline), distinct from and never
  * touching `accountStatus` (Admin's ban/enable, portal-access control -
  * see setDriverAccountStatus() in StoreContext.js / admin/DriversPage.jsx,
  * completely untouched by this endpoint).
+ *
+ * Callable by the driver themselves, for their own record only, and by an
+ * admin for any driver (admin/DriversPage.jsx has an online/offline control
+ * per row). It must stay the ONLY write path for this field for both of
+ * them: the bulk blob save deliberately refuses to carry driver
+ * availability at all (keepDriverAvailabilityFromDb() above always restores
+ * the stored value over whatever a staff snapshot sent), because a staff
+ * browser's copy of the drivers list is routinely older than the database
+ * and would silently put a driver who just went offline back online. An
+ * admin toggle wired to a normal save would therefore appear to work and
+ * then revert on the next reload - which is why the equivalent control on
+ * dispatcher/ActiveDriversPage.jsx was commented out rather than fixed.
  *
  * `drivers` is staff-only-write for the bulk blob save (STAFF_ONLY_WRITE_KEYS
  * above) - that restriction exists to stop a driver's partial/scoped local
@@ -887,8 +899,8 @@ const updateDriverLocation = async (req, res) => {
  * (never from the URL's :id alone - the URL value is only ever compared
  * against, never trusted).
  *
- * All three operational states (Available / Delivering / Offline) are the
- * driver's own to set from their portal. "Delivering" is still maintained
+ * All three operational states (Available / Delivering / Offline) can be set
+ * here. "Delivering" is still maintained
  * automatically from their real active-shipment count (see
  * reconcileDriverAvailability() above and assignDriver() in
  * StoreContext.js) so a driver who never touches this card always shows the
@@ -900,14 +912,28 @@ const updateDriverLocation = async (req, res) => {
  */
 const updateDriverAvailability = async (req, res) => {
   try {
-    if (roleOf(req) !== "driver") {
-      return res.status(403).json({ success: false, message: "Only a driver account can set driver availability" });
+    const role = roleOf(req);
+    if (role !== "driver" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "Only a driver or an admin account can set driver availability" });
     }
     const { id } = req.params;
     const drivers = await loadList("drivers");
-    const driverBlobId = resolveDriverBlobId(drivers, req.user);
-    if (!driverBlobId || driverBlobId !== id) {
-      return res.status(403).json({ success: false, message: "You can only change your own availability" });
+
+    // A driver is resolved from their JWT and may only ever write their own
+    // record - the URL's :id is compared against, never trusted. An admin
+    // manages every driver, so for them the :id is the target and only has
+    // to name a driver that exists.
+    let driverBlobId;
+    if (role === "driver") {
+      driverBlobId = resolveDriverBlobId(drivers, req.user);
+      if (!driverBlobId || driverBlobId !== id) {
+        return res.status(403).json({ success: false, message: "You can only change your own availability" });
+      }
+    } else {
+      if (!drivers.some((driver) => driver.id === id)) {
+        return res.status(404).json({ success: false, message: "Driver not found" });
+      }
+      driverBlobId = id;
     }
 
     const { availability } = req.body || {};
@@ -915,12 +941,16 @@ const updateDriverAvailability = async (req, res) => {
       return res.status(400).json({ success: false, message: `availability must be one of ${DRIVER_AVAILABILITY_VALUES.map((value) => `"${value}"`).join(", ")}` });
     }
 
-    // The driver's own choice is stored together with the active-delivery
-    // count it was made against, which is what lets
-    // reconcileDriverAvailability() tell "this driver has decided" from
-    // "this record is just stale" without needing any extra event: the
-    // choice stands while that count still matches, and expires by itself
-    // the moment their real workload changes.
+    // The choice is stored together with the active-delivery count it was
+    // made against, which is what lets reconcileDriverAvailability() tell
+    // "a person has decided this" from "this record is just stale" without
+    // needing any extra event: the choice stands while that count still
+    // matches, and expires by itself the moment their real workload changes.
+    // `availabilitySetByDriver` marks a deliberate human choice - the
+    // driver's own or an admin's on their behalf - not merely who sent it;
+    // both must survive the automatic upkeep the same way, so an admin
+    // setting a driver Offline mid-round is not flipped straight back to
+    // "Delivering" by the next shipments save.
     const ShipmentModel = getAppModel("shipments");
     const activeCount = await ShipmentModel.countDocuments({ driverId: driverBlobId, status: "OUT_FOR_DELIVERY" });
 
