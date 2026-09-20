@@ -211,23 +211,63 @@ function mergeWithShape(remote) {
   return merged;
 }
 
-function readBackup() {
-  if (typeof window === 'undefined') return null;
+// The mirror is stored per user. Data is role-scoped on the server, so one
+// shared copy would let the next person to sign in on this browser see the
+// previous person's records while their own data is still loading.
+function backupKey(userId) {
+  return `${STORE_BACKUP_KEY}:${userId}`;
+}
+
+function readBackup(userId) {
+  if (typeof window === 'undefined' || !userId) return null;
   try {
-    const raw = window.localStorage.getItem(STORE_BACKUP_KEY);
+    const raw = window.localStorage.getItem(backupKey(userId));
     return raw ? mergeWithShape(JSON.parse(raw)) : null;
   } catch (error) {
     return null;
   }
 }
 
-function writeBackup(data) {
-  if (typeof window === 'undefined') return;
+function writeBackup(data, userId) {
+  if (typeof window === 'undefined' || !userId || !data) return;
   try {
-    window.localStorage.setItem(STORE_BACKUP_KEY, JSON.stringify(data));
+    window.localStorage.setItem(backupKey(userId), JSON.stringify(data));
   } catch (error) {
     // storage may be full or unavailable - MongoDB is the real store
   }
+}
+
+/**
+ * The lists in `snapshot` whose content differs from what was last confirmed
+ * saved, as a payload holding only those keys. `lastByKey` maps each key to
+ * the JSON of the value the server last accepted for it.
+ *
+ * A save carrying all 25 lists made the server rewrite all 25 collections
+ * however small the edit, which is the bulk of what a save costs against a
+ * remote database. Nothing is lost by sending less: a key left out is simply
+ * not touched by that save (saveAppData skips keys the request does not
+ * carry), and any key that is still unsaved - including after a failed
+ * request, since `lastByKey` only advances on success - is still different
+ * here and goes out with the next one.
+ */
+function changedLists(snapshot, lastByKey) {
+  const payload = {};
+  if (!snapshot) return payload;
+  for (const [key, list] of Object.entries(snapshot)) {
+    if (!Array.isArray(list)) continue;
+    if (JSON.stringify(list) !== lastByKey[key]) payload[key] = list;
+  }
+  return payload;
+}
+
+/** Records an entire snapshot as saved, for `changedLists` to diff against. */
+function markAllSaved(snapshot) {
+  const byKey = {};
+  if (!snapshot) return byKey;
+  for (const [key, list] of Object.entries(snapshot)) {
+    if (Array.isArray(list)) byKey[key] = JSON.stringify(list);
+  }
+  return byKey;
 }
 
 function nextId(prefix, list) {
@@ -287,13 +327,19 @@ function emptyShape() {
 
 export function StoreProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
-  const [data, setData] = useState(null);
-  const [storeStatus, setStoreStatus] = useState('loading'); // loading | ready | offline
+  // Never null: a reload renders straight away from this user's cached copy
+  // (or an empty shape on a cold cache) and loadFromServer() swaps in the real
+  // data once MongoDB answers, instead of blocking the whole app on a spinner.
+  const [data, setData] = useState(() => (isAuthenticated ? (readBackup(user?.id) || emptyShape()) : emptyShape()));
+  const [storeStatus, setStoreStatus] = useState(isAuthenticated ? 'loading' : 'ready'); // loading | ready | offline
   const [saveState, setSaveState] = useState('idle');        // idle | saving | saved | error
   const [storeError, setStoreError] = useState('');
 
   const latestRef = useRef(null);
   const lastSavedRef = useRef('');
+  // Per-list JSON of what the server last accepted, so a save can send only
+  // the lists that actually changed. See changedLists() above.
+  const lastSavedByKeyRef = useRef({});
   const saveTimerRef = useRef(null);
   // Server time this snapshot was read, refreshed after every successful
   // save. Sent back with each save so the server can keep records this
@@ -301,6 +347,10 @@ export function StoreProvider({ children }) {
   // backend/controllers/appDataController.js. Without it, saving a snapshot
   // loaded minutes ago reverted other people's shipment status changes.
   const asOfRef = useRef('');
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
+  const storeStatusRef = useRef(storeStatus);
+  storeStatusRef.current = storeStatus;
 
   /**
    * Loads every list from MongoDB (GET /api/app-data). On a completely empty
@@ -318,31 +368,44 @@ export function StoreProvider({ children }) {
         || Object.keys(remote).length === 0
         || Object.values(remote).every((list) => !Array.isArray(list) || list.length === 0);
 
-      let next;
-      if (isEmpty) {
-        next = seedData();
-        const seeded = await appDataApi.saveAll(next, asOfRef.current);
-        if (seeded?.savedAt) asOfRef.current = seeded.savedAt;
-      } else {
-        next = mergeWithShape(remote);
-        // A full startup sync also populates legacy/domain collections that
-        // were added after the cms_* collections already existed.
-        const synced = await appDataApi.saveAll(next, asOfRef.current);
-        if (synced?.savedAt) asOfRef.current = synced.savedAt;
-      }
+      // On a completely empty database the seed is what gets shown AND what
+      // gets written up; otherwise show exactly what the server returned.
+      const next = isEmpty ? seedData() : mergeWithShape(remote);
 
       lastSavedRef.current = JSON.stringify(next);
+      lastSavedByKeyRef.current = markAllSaved(next);
       latestRef.current = next;
-      writeBackup(next);
+      writeBackup(next, userIdRef.current);
       setData(next);
       setStoreStatus('ready');
       setSaveState('saved');
+
+      // Seeding is the ONLY reason to write on load - it is the one case
+      // where the server does not already hold this data.
+      //
+      // Every load used to also save the snapshot straight back, to populate
+      // legacy/domain collections added after the cms_* ones existed. That is
+      // a full 25-collection rewrite of data the server had just handed over,
+      // and against a remote Atlas cluster (~186ms per round trip, measured)
+      // it regularly ran past the client's 20s request timeout - which is
+      // what put "Not connected to the database" on screen after a reload.
+      // Only `users` is still mirrored (LEGACY_COLLECTIONS in
+      // backend/models/appData.js) and every real edit to that list already
+      // goes through the normal debounced save below, so nothing needs the
+      // rewrite to happen on load.
+      if (isEmpty) {
+        const seeded = await appDataApi.saveAll(next, asOfRef.current);
+        if (seeded?.savedAt) asOfRef.current = seeded.savedAt;
+      }
     } catch (error) {
       // Backend unreachable: keep the app usable from the local mirror and
       // show a banner instead of a blank screen.
-      const fallback = readBackup() || seedData();
+      const fallback = readBackup(userIdRef.current) || seedData();
       latestRef.current = fallback;
+      // Nothing is known to be on the server, so the next successful save
+      // sends every list rather than a diff against a stale record.
       lastSavedRef.current = '';
+      lastSavedByKeyRef.current = {};
       setData(fallback);
       setStoreStatus('offline');
       setStoreError(error?.message || 'Could not reach the server');
@@ -360,6 +423,7 @@ export function StoreProvider({ children }) {
       window.clearTimeout(saveTimerRef.current);
       latestRef.current = null;
       lastSavedRef.current = '';
+      lastSavedByKeyRef.current = {};
       setData(emptyShape());
       setStoreStatus('ready');
       setSaveState('idle');
@@ -375,7 +439,9 @@ export function StoreProvider({ children }) {
     if (!data) return undefined;
     if (!isAuthenticated) return undefined;
     latestRef.current = data;
-    writeBackup(data);
+    // Not while loading: `data` is still the cached/empty placeholder then,
+    // and writing an empty shape would wipe the cache the next reload needs.
+    if (storeStatus !== 'loading') writeBackup(data, userIdRef.current);
 
     const serialised = JSON.stringify(data);
     if (serialised === lastSavedRef.current) return undefined;
@@ -384,9 +450,30 @@ export function StoreProvider({ children }) {
     setSaveState('saving');
     window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(async () => {
+      // Only the lists that actually changed are sent. Every save used to
+      // carry all 25 lists, so editing one shipment rewrote all 25
+      // collections - 25 bulk writes against a remote Atlas cluster for one
+      // changed row. The server already handles a partial payload: it walks
+      // its own key list and skips any key the request does not carry (see
+      // saveAppData in backend/controllers/appDataController.js).
+      // Pinned before the request so that a change made while it is in flight
+      // is never mistakenly marked as saved - it stays different from what
+      // was sent, so the next save picks it up.
+      const snapshot = latestRef.current;
+      const payload = changedLists(snapshot, lastSavedByKeyRef.current);
+      const sentKeys = Object.keys(payload);
+      if (sentKeys.length === 0) {
+        lastSavedRef.current = JSON.stringify(snapshot);
+        setSaveState('saved');
+        return;
+      }
       try {
-        const response = await appDataApi.saveAll(latestRef.current, asOfRef.current);
-        lastSavedRef.current = JSON.stringify(latestRef.current);
+        const response = await appDataApi.saveAll(payload, asOfRef.current);
+        // Only the keys actually sent are marked saved.
+        sentKeys.forEach((key) => {
+          lastSavedByKeyRef.current[key] = JSON.stringify(payload[key]);
+        });
+        lastSavedRef.current = JSON.stringify(snapshot);
         if (response?.savedAt) asOfRef.current = response.savedAt;
         setSaveState('saved');
         setStoreError('');
@@ -419,8 +506,11 @@ export function StoreProvider({ children }) {
   // Writes anything still queued before the tab closes.
   useEffect(() => {
     const flush = () => {
+      // lastSavedRef is only '' before the first server load (or when offline
+      // with nothing saved); latestRef is then just the cached/empty placeholder.
+      if (!lastSavedRef.current && storeStatusRef.current === 'loading') return;
       if (JSON.stringify(latestRef.current) === lastSavedRef.current) return;
-      writeBackup(latestRef.current);
+      writeBackup(latestRef.current, userIdRef.current);
     };
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
@@ -999,8 +1089,11 @@ export function StoreProvider({ children }) {
     // collection wholesale, so the per-record merge that protects a normal
     // save from stale data (reconcileShipmentWrite in the backend) must not
     // hold any of the old records back.
+    // Sent whole, not as a diff: a reset must replace every collection.
     return appDataApi.saveAll(fresh).then((response) => {
       if (response?.savedAt) asOfRef.current = response.savedAt;
+      lastSavedRef.current = JSON.stringify(fresh);
+      lastSavedByKeyRef.current = markAllSaved(fresh);
       return response;
     }).catch(() => {});
   }, []);
@@ -1061,29 +1154,6 @@ export function StoreProvider({ children }) {
     resetDemoData,
     logAction,
   }), [data, storeStatus, storeError, saveState, reloadStore, createShipment, updateShipmentStatus, setShipmentCoordinates, assignDriver, toggleDriverAvailability, addDriver, setDriverAccountStatus, removeDriver, addUser, setUserStatus, removeUser, addBranch, toggleBranchStatus, addAddress, removeAddress, createSettlement, markSettlementCleared, markSettlementReview, reconcileDriverEntry, payInvoice, decideRefund, reportDamage, markLost, returnToOrigin, addVehicle, setVehicleStatus, removeVehicle, createManifest, advanceManifest, addPricingRule, addZone, toggleZoneStatus, updateNotificationTemplate, setTicketStatus, setComplaintStatus, addSupportTicket, addComplaint, capturePOD, addRating, generateApiKey, revokeApiKey, addWebhook, toggleWebhookStatus, testWebhook, setOrgPlan, processSandboxPayment, pushNotification, resetDemoData, logAction]);
-
-  if (!data) {
-    return (
-      <div style={{
-        minHeight: '100vh', display: 'grid', placeItems: 'center',
-        background: 'linear-gradient(135deg,#0F1A2F,#12213F 48%,#1B2E5C)',
-        color: '#fff', fontFamily: 'Inter, sans-serif', textAlign: 'center', padding: 24,
-      }}>
-        <div>
-          <div style={{
-            width: 34, height: 34, margin: '0 auto 16px', borderRadius: '50%',
-            border: '3px solid rgba(255,255,255,.25)', borderTopColor: '#F5A524',
-            animation: 'cms-spin 0.8s linear infinite',
-          }} />
-          <style>{'@keyframes cms-spin{to{transform:rotate(360deg)}}'}</style>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>Loading data from MongoDB…</div>
-          <div style={{ marginTop: 6, fontSize: 12.5, opacity: 0.7 }}>
-            Make sure the backend is running: <code>cd backend &amp;&amp; npm run dev</code>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <StoreContext.Provider value={value}>

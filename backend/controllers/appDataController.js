@@ -594,9 +594,16 @@ const saveAppData = async (req, res) => {
       if (rejectIfInvalid(res, key, effectivePayload[key], validationContext[key])) return;
     }
 
-    for (const key of Object.keys(effectivePayload)) {
-      saved[key] = await saveList(key, effectivePayload[key]);
-    }
+    // Each key writes to its own independent collection, so these run
+    // together rather than one after another. Sequentially this cost one full
+    // network round trip per list against a remote Atlas cluster (~186ms
+    // each, measured) - 25 of them on every single save, which is a large
+    // part of what pushed a normal save past the client's request timeout.
+    await Promise.all(
+      Object.keys(effectivePayload).map(async (key) => {
+        saved[key] = await saveList(key, effectivePayload[key]);
+      })
+    );
 
     // A driver's operational availability (drivers[].status: Available /
     // Delivering / Offline) must reflect their REAL active shipment count
