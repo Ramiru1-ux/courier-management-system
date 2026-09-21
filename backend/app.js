@@ -5,6 +5,8 @@ const path = require("path");
 const cors = require("cors");
 const routes = require("./routes");
 const env = require("./config/env");
+const { getDbStatus } = require("./config/db");
+const requireDatabase = require("./middleware/requireDatabase");
 const notFound = require("./middleware/notFound");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
@@ -59,15 +61,36 @@ app.get("/", (req, res) => {
 	});
 });
 
-app.get("/health", (req, res) => {
-	res.status(200).json({
-		success: true,
-		status: "healthy",
+/**
+ * Real health, reported from the live mongoose connection state.
+ *
+ * This used to answer `status: "healthy"` unconditionally without looking at
+ * MongoDB at all, so it could not be used to tell a database outage from a
+ * healthy system - and it is mounted outside /api, which the Vite dev proxy
+ * does not forward, so the browser could never reach it either. It is now
+ * truthful AND also mounted at /api/health so the frontend can actually ask.
+ *
+ * 200 = database connected, 503 = reachable server but no usable database.
+ * Deliberately unauthenticated and free of connection details that would leak
+ * credentials: no MONGO_URI, no user, no password - only state, db name/host.
+ */
+const healthHandler = (req, res) => {
+	const database = getDbStatus();
+	res.status(database.connected ? 200 : 503).json({
+		success: database.connected,
+		status: database.connected ? "healthy" : "degraded",
+		database,
 		timestamp: new Date().toISOString(),
 	});
-});
+};
 
-app.use("/api", routes);
+app.get("/health", healthHandler);
+app.get("/api/health", healthHandler);
+
+// Every other /api route needs the database, so a request that cannot possibly
+// succeed is refused here in milliseconds rather than hanging until the
+// browser times out. Mounted after the health routes on purpose.
+app.use("/api", requireDatabase, routes);
 app.use(notFound);
 app.use(errorMiddleware);
 

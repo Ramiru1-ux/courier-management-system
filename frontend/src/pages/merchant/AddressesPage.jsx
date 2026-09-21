@@ -24,18 +24,16 @@ export default function MerchantAddressesPage() {
     try {
       const key = `cms_merchant_addresses_${merchantName}`;
       const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      // Only REAL addresses this merchant previously saved in the browser are
+      // migrated into MongoDB. A merchant with none used to have a made-up
+      // "Main warehouse / No. 5, Union Place" address written into the
+      // database on their behalf - a fabricated business record that looked
+      // exactly like one they had entered. They now simply see an empty list
+      // until they add their own.
       if (saved.length) {
         saved.forEach(({ id, ...address }) => addAddress(merchantName, address));
-      } else {
-        addAddress(merchantName, {
-          label: 'Main warehouse',
-          address: 'No. 5, Union Place',
-          city: 'Colombo 2',
-          contact: 'Store Manager',
-          phone: '011 234 5566',
-        });
+        localStorage.removeItem(key);
       }
-      if (saved.length) localStorage.removeItem(key);
     } catch (error) {
       // Ignore malformed legacy browser data; MongoDB remains the source of truth.
     }

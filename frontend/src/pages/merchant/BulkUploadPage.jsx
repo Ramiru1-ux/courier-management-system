@@ -46,9 +46,17 @@ export default function BulkUploadPage() {
 
   const handleCreateAll = () => {
     if (rows.length === 0) return;
+    // Fail closed. This used to fall back to the seed merchant 'Urban Mart',
+    // which stamped that name onto every shipment written to MongoDB for any
+    // account whose merchant link was missing - filing one merchant's parcels
+    // under another's name, and putting them in that merchant's scoped view.
+    if (!user?.merchantName) {
+      toast.error('Your account is not linked to a merchant, so these shipments cannot be created. Ask an admin to set it.');
+      return;
+    }
     rows.forEach((row) => {
       createShipment({
-        senderName: user?.merchantName || 'Urban Mart',
+        senderName: user.merchantName,
         senderPhone: '',
         senderAddress: '',
         branch: branches[0]?.name || '',

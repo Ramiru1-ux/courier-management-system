@@ -3,6 +3,7 @@ const { STAFF_ROLES, buildScopeContext, scopeSnapshotForRead, reconcileScopedWri
 const { validateShipmentsList } = require("../validators/shipmentDataValidator");
 const { dispatchExternalNotification } = require("../services/notificationDispatcher");
 const { hasExplicitPermission } = require("../utils/permissionMatrix");
+const { ACTIVE_FAILED_RTO_STATUSES, RTO_STATUSES } = require("../config/shipmentWorkflow");
 
 /**
  * Authoritative, server-side validation for the handful of list keys that
@@ -35,11 +36,18 @@ function rejectIfInvalid(res, key, items, context) {
  * `effectivePayload`, so a request cannot forge its own validation context
  * (e.g. by also sending a fabricated `drivers` list in the same payload).
  */
-async function buildValidationContext(effectivePayload) {
+async function buildValidationContext(effectivePayload, req) {
   const context = {};
   if (Object.prototype.hasOwnProperty.call(effectivePayload, "shipments")) {
     const [drivers, currentShipments] = await Promise.all([loadList("drivers"), loadList("shipments")]);
-    context.shipments = { drivers, currentById: new Map(currentShipments.map((s) => [String(s.id), s])) };
+    context.shipments = {
+      drivers,
+      currentById: new Map(currentShipments.map((s) => [String(s.id), s])),
+      // Taken from the verified JWT, never from the request body, so the
+      // shipment workflow's role rules cannot be talked around by a client
+      // claiming to be someone else (see config/shipmentWorkflow.js).
+      role: roleOf(req),
+    };
   }
   return context;
 }
@@ -589,7 +597,7 @@ const saveAppData = async (req, res) => {
     // (above) but before ANY write (below) - an invalid shipments list
     // rejects the whole request with nothing persisted, for this key or any
     // other key that was part of the same save.
-    const validationContext = await buildValidationContext(effectivePayload);
+    const validationContext = await buildValidationContext(effectivePayload, req);
     for (const key of Object.keys(effectivePayload)) {
       if (rejectIfInvalid(res, key, effectivePayload[key], validationContext[key])) return;
     }
@@ -735,7 +743,7 @@ const saveEntity = async (req, res) => {
       staleShipmentIds = merged.keptFromDb;
     }
 
-    const validationContext = await buildValidationContext({ [entity]: toSave });
+    const validationContext = await buildValidationContext({ [entity]: toSave }, req);
     if (rejectIfInvalid(res, entity, toSave, validationContext[entity])) return;
     const count = await saveList(entity, toSave);
     if (entity === "shipments") {
@@ -1020,4 +1028,69 @@ const getCollectionMap = async (req, res) => {
   }
 };
 
-module.exports = { getAppData, saveAppData, getEntity, saveEntity, getCollectionMap, testWebhookById, updateDriverLocation, updateDriverAvailability, dispatchNotification };
+
+/**
+ * GET /api/app-data/shipments/failed-rto
+ *
+ * The merchant's failed and returned shipments, and the count behind the
+ * "Failed / RTO" card on their dashboard.
+ *
+ * The count is computed by MongoDB (countDocuments with the status filter),
+ * not by counting rows the browser happens to have loaded, so it describes
+ * the real database state even when the list is paged or filtered.
+ *
+ * MERCHANT ISOLATION: the owning merchant is taken from the verified JWT and
+ * written into the QUERY ITSELF (`senderName: <their name>`), so another
+ * merchant's shipments are never fetched in the first place - they are not
+ * fetched-then-hidden. A merchant cannot widen it either: the `merchant`
+ * query parameter is only honoured for staff, and is ignored for a merchant
+ * account, which is always pinned to its own name.
+ */
+const getFailedRtoShipments = async (req, res) => {
+  try {
+    const role = roleOf(req);
+    const isStaffViewer = isStaff(req);
+    if (role !== "merchant" && !isStaffViewer) {
+      return res.status(403).json({ success: false, message: "Not allowed to read merchant failed/RTO shipments" });
+    }
+
+    // A merchant is ALWAYS pinned to their own name from the token. Staff may
+    // look at one merchant by name, or leave it off to see every merchant's.
+    const merchantName = role === "merchant"
+      ? String(req.user?.merchantName || "")
+      : String(req.query.merchant || "").trim();
+
+    if (role === "merchant" && !merchantName) {
+      return res.status(400).json({
+        success: false,
+        message: "This account is not linked to a merchant, so its shipments cannot be identified.",
+      });
+    }
+
+    const ShipmentModel = getAppModel("shipments");
+    const ownerFilter = merchantName ? { senderName: merchantName } : {};
+    const activeFilter = { ...ownerFilter, status: { $in: ACTIVE_FAILED_RTO_STATUSES } };
+
+    const [activeCount, completedCount, docs] = await Promise.all([
+      ShipmentModel.countDocuments(activeFilter),
+      ShipmentModel.countDocuments({ ...ownerFilter, status: "RTO_COMPLETED" }),
+      ShipmentModel.find({ ...ownerFilter, status: { $in: [...ACTIVE_FAILED_RTO_STATUSES, "RTO_COMPLETED"] } })
+        .sort({ __order: 1 })
+        .lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      // What the dashboard card shows. RTO_COMPLETED is excluded: the parcel
+      // is back with the merchant, so nothing is outstanding.
+      needsAttention: activeCount,
+      rtoCompleted: completedCount,
+      total: activeCount + completedCount,
+      data: docs.map(stripInternals),
+    });
+  } catch (error) {
+    return fail(res, error, "Failed to load failed/RTO shipments");
+  }
+};
+
+module.exports = { getAppData, saveAppData, getEntity, saveEntity, getCollectionMap, testWebhookById, updateDriverLocation, updateDriverAvailability, dispatchNotification, getFailedRtoShipments };

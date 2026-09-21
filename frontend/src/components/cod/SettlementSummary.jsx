@@ -216,28 +216,38 @@ const styles = `
 	}
 `;
 
-const defaultSummary = {
-	gross: 'Rs 4.62L',
-	pending: 'Rs 2.84L',
-	settled: 'Rs 1.18L',
-	merchants: '147',
-	grossChange: '+6.8% vs last week',
-	pendingChange: '-8.3% vs last week',
-	settledChange: '+2.1% vs yesterday',
-	merchantChange: '+11 active',
-	collected: 72,
-	collectedAmount: 'Rs 3.33L collected',
-	targetAmount: 'Rs 4.62L target',
-	nextPayout: 'Urban Mart · Rs 88,000',
-	nextPayoutDue: 'Due today',
+/**
+ * Empty placeholders, NOT sample figures.
+ *
+ * These used to be invented numbers - Rs 4.62L gross, 147 merchants,
+ * "+6.8% vs last week", a next payout of "Urban Mart . Rs 88,000" - and the
+ * component spread them UNDER the caller's real data. Any key the caller
+ * happened not to pass was therefore rendered as a convincing fabricated
+ * figure on a live finance screen. Blank is the honest answer when a number
+ * has not been supplied.
+ */
+const emptySummary = {
+	gross: 'Rs 0',
+	pending: 'Rs 0',
+	settled: 'Rs 0',
+	merchants: '0',
+	grossChange: '',
+	pendingChange: '',
+	settledChange: '',
+	merchantChange: '',
+	collected: 0,
+	collectedAmount: 'Rs 0 collected',
+	targetAmount: 'Rs 0 target',
+	nextPayout: 'Nothing due',
+	nextPayoutDue: '',
 };
 
 export default function SettlementSummary({
-	summary = defaultSummary,
+	summary = emptySummary,
 	period = 'This week',
 	onPayoutClick,
 }) {
-	const data = { ...defaultSummary, ...summary };
+	const data = { ...emptySummary, ...summary };
 	const progress = Math.min(Math.max(Number(data.collected) || 0, 0), 100);
 	const metrics = [
 		{ label: 'Gross COD', value: data.gross, change: data.grossChange, positive: true, icon: CircleDollarSign },

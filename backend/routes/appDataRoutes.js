@@ -37,6 +37,9 @@ const notificationDispatchLimiter = createRateLimiter({ windowMs: 60 * 1000, max
 router.get("/", controller.getAppData);
 router.put("/", controller.saveAppData);
 router.get("/meta/collections", controller.getCollectionMap);
+// Must be declared before the generic "/:entity" route below, or "shipments"
+// would be captured as an entity name and this would never be reached.
+router.get("/shipments/failed-rto", controller.getFailedRtoShipments);
 router.post("/webhooks/:id/test", webhookTestLimiter, controller.testWebhookById);
 router.put("/drivers/:id/location", locationLimiter, controller.updateDriverLocation);
 router.put("/drivers/:id/availability", availabilityLimiter, controller.updateDriverAvailability);

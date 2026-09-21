@@ -1,6 +1,5 @@
 const express = require("express");
 const controller = require("../controllers/trackingController");
-const { optionalAuth } = require("../middleware/authMiddleware");
 const { createRateLimiter } = require("../middleware/rateLimiter");
 const router = express.Router();
 
@@ -15,7 +14,10 @@ const publicTrackingLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 }
 // still far above anything a real customer would need.
 const publicSubmissionLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10 });
 
-router.get("/shipment/:id", optionalAuth, controller.getShipmentTracking);
+// The former GET /shipment/:id handler is gone with the legacy Shipment
+// model it was built on (see controllers/trackingController.js) - nothing
+// called it, and it was the last thing keeping the duplicate `shipments`
+// collection alive.
 // Deliberately fully public, no auth check at all - this is the one lookup
 // the public "/track" page and the customer portal's tracking page are
 // allowed to use without (or before) signing in.

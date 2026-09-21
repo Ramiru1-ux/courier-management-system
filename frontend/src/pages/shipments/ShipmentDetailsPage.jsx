@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertOctagon, ArrowLeft, CheckCircle2, PackageX, Printer, RotateCcw, Truck } from 'lucide-react';
+import { AlertOctagon, ArrowLeft, CalendarClock, CheckCircle2, PackageX, Printer, RotateCcw, Truck, Undo2 } from 'lucide-react';
 import PortalLayout from '../../components/layout/PortalLayout';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
@@ -10,18 +10,26 @@ import EmptyState from '../../components/common/EmptyState';
 import ShipmentQrCode from '../../components/common/ShipmentQrCode';
 import useStore from '../../hooks/useStore';
 import useAuth from '../../hooks/useAuth';
-import { STATUS_FLOW, statusLabel, statusTone, flowIndex, isTerminal, formatLKR, FAILURE_REASONS, failureReasonLabel } from '../../utils/shipmentStatus';
+import { STATUS_FLOW, statusLabel, statusTone, flowIndex, isTerminal, isRto, formatLKR, formatDateTime, FAILURE_REASONS, failureReasonLabel } from '../../utils/shipmentStatus';
 import { printWaybill } from '../../utils/barcode';
 
 export default function ShipmentDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { shipments, drivers, assignDriver, updateShipmentStatus, reportDamage, markLost, returnToOrigin } = useStore();
+  const {
+    shipments, drivers, assignDriver, updateShipmentStatus, reportDamage, markLost,
+    markDeliveryFailed, retryDelivery, rescheduleDelivery, initiateRto, setRtoInTransit, completeRto,
+  } = useStore();
   const [assignOpen, setAssignOpen] = useState(false);
   const [driverChoice, setDriverChoice] = useState('');
   const [failOpen, setFailOpen] = useState(false);
   const [failReason, setFailReason] = useState(FAILURE_REASONS[0]);
+  const [failNotes, setFailNotes] = useState('');
+  const [rtoOpen, setRtoOpen] = useState(false);
+  const [rtoReason, setRtoReason] = useState('Maximum delivery attempts reached');
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
 
   const shipment = shipments.find((s) => s.id === id);
 
@@ -52,9 +60,37 @@ export default function ShipmentDetailsPage() {
   };
 
   const handleConfirmFailed = () => {
-    updateShipmentStatus(shipment.id, 'DELIVERY_FAILED', `Delivery failed - ${failureReasonLabel(failReason)}`);
+    markDeliveryFailed(shipment.id, failReason, failNotes);
     toast.error('Delivery marked as failed');
+    setFailNotes('');
     setFailOpen(false);
+  };
+
+  const handleRetry = () => {
+    retryDelivery(shipment.id);
+    toast.success('Delivery retried');
+  };
+
+  const handleReschedule = () => {
+    rescheduleDelivery(shipment.id, rescheduleDate);
+    toast.success(rescheduleDate ? `Delivery rescheduled for ${rescheduleDate}` : 'Delivery rescheduled');
+    setRescheduleOpen(false);
+  };
+
+  const handleInitiateRto = () => {
+    initiateRto(shipment.id, rtoReason);
+    toast.success('RTO initiated - the parcel will be returned to the sender');
+    setRtoOpen(false);
+  };
+
+  const handleRtoInTransit = () => {
+    setRtoInTransit(shipment.id);
+    toast.success('Marked as returning to sender');
+  };
+
+  const handleRtoCompleted = () => {
+    completeRto(shipment.id);
+    toast.success('RTO completed - parcel is back with the sender');
   };
 
   const handleDamage = () => {
@@ -65,11 +101,6 @@ export default function ShipmentDetailsPage() {
   const handleLost = () => {
     markLost(shipment.id);
     toast.error('Shipment reported as lost - under investigation');
-  };
-
-  const handleReturnToOrigin = () => {
-    returnToOrigin(shipment.id, 'maximum delivery attempts reached');
-    toast.success('Shipment set to return-to-origin');
   };
 
   const handlePrint = async () => {
@@ -107,11 +138,85 @@ export default function ShipmentDetailsPage() {
             </>
           )}
 
+          {/* The failed / RTO workflow. A failed delivery is not the end of
+              the line: dispatch can send it out again, park it for a later
+              date, or start the return journey. */}
           {canDispatch && shipment.status === 'DELIVERY_FAILED' && (
-            <Button variant="danger" icon={RotateCcw} onClick={handleReturnToOrigin}>Return to origin</Button>
+            <>
+              <Button variant="primary" icon={RotateCcw} onClick={handleRetry}>Retry delivery</Button>
+              <Button variant="secondary" icon={CalendarClock} onClick={() => setRescheduleOpen(true)}>Reschedule</Button>
+              <Button variant="danger" icon={Undo2} onClick={() => setRtoOpen(true)}>Initiate RTO</Button>
+            </>
+          )}
+          {canDispatch && ['RTO_INITIATED', 'RTO'].includes(shipment.status) && (
+            <Button variant="primary" icon={Truck} onClick={handleRtoInTransit}>Mark RTO in transit</Button>
+          )}
+          {canDispatch && shipment.status === 'RTO_IN_TRANSIT' && (
+            <Button variant="primary" icon={CheckCircle2} onClick={handleRtoCompleted}>Mark RTO completed</Button>
           )}
         </div>
       </div>
+
+      {/* Shown only when the shipment has actually failed or is being
+          returned - a healthy shipment shows nothing here at all. */}
+      {(shipment.failureReason || isRto(shipment.status)) && (
+        <div style={{ background: '#fff', border: '1px solid #E3E7EF', borderLeft: '4px solid #B23528', borderRadius: 14, padding: '16px 20px', marginBottom: 16 }}>
+          <div style={{ fontFamily: 'Sora, sans-serif', fontWeight: 700, fontSize: 14.5, color: '#12213F', marginBottom: 12 }}>
+            {isRto(shipment.status) ? 'Return to sender' : 'Failed delivery'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, fontSize: 12.5 }}>
+            {shipment.failureReason && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>Failure reason</div>
+                <div style={{ fontWeight: 700, color: '#B23528' }}>{failureReasonLabel(shipment.failureReason)}</div>
+                {shipment.failureNotes ? <div style={{ color: '#697086', marginTop: 2 }}>{shipment.failureNotes}</div> : null}
+              </div>
+            )}
+            {shipment.deliveryAttempts ? (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>Delivery attempts</div>
+                <div style={{ fontWeight: 700, color: '#12213F' }}>{shipment.deliveryAttempts}</div>
+              </div>
+            ) : null}
+            {shipment.failedAt && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>Attempted on</div>
+                <div style={{ fontWeight: 600, color: '#12213F' }}>{formatDateTime(shipment.failedAt)}</div>
+              </div>
+            )}
+            {(shipment.failedByName || shipment.failedBy) && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>Attempted by</div>
+                <div style={{ fontWeight: 600, color: '#12213F' }}>{shipment.failedByName || shipment.failedBy}</div>
+              </div>
+            )}
+            {shipment.rescheduledFor ? (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>Rescheduled for</div>
+                <div style={{ fontWeight: 600, color: '#12213F' }}>{shipment.rescheduledFor}</div>
+              </div>
+            ) : null}
+            {shipment.rtoReason && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>RTO reason</div>
+                <div style={{ fontWeight: 600, color: '#12213F' }}>{shipment.rtoReason}</div>
+              </div>
+            )}
+            {shipment.rtoInitiatedAt && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>RTO initiated</div>
+                <div style={{ fontWeight: 600, color: '#12213F' }}>{formatDateTime(shipment.rtoInitiatedAt)}</div>
+              </div>
+            )}
+            {shipment.rtoCompletedAt && (
+              <div>
+                <div style={{ color: '#9AA1B4', fontSize: 11, marginBottom: 3 }}>RTO completed</div>
+                <div style={{ fontWeight: 600, color: '#0C8C6B' }}>{formatDateTime(shipment.rtoCompletedAt)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
         <div style={{ background: '#fff', border: '1px solid #E3E7EF', borderRadius: 14, padding: 20 }}>
@@ -199,6 +304,45 @@ export default function ShipmentDetailsPage() {
         <select value={failReason} onChange={(e) => setFailReason(e.target.value)} style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}>
           {FAILURE_REASONS.map((reason) => <option key={reason} value={reason}>{failureReasonLabel(reason)}</option>)}
         </select>
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', margin: '12px 0 6px' }}>Notes (optional)</label>
+        <input
+          value={failNotes}
+          onChange={(e) => setFailNotes(e.target.value)}
+          placeholder="Anything the dispatcher should know"
+          style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}
+        />
+      </Modal>
+
+      <Modal
+        open={rescheduleOpen}
+        onClose={() => setRescheduleOpen(false)}
+        title="Reschedule delivery"
+        description="The shipment goes back to the branch and waits for the new date."
+        footer={<><Button variant="secondary" onClick={() => setRescheduleOpen(false)}>Cancel</Button><Button variant="primary" onClick={handleReschedule}>Reschedule</Button></>}
+      >
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>New delivery date</label>
+        <input
+          type="date"
+          value={rescheduleDate}
+          onChange={(e) => setRescheduleDate(e.target.value)}
+          style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}
+        />
+      </Modal>
+
+      <Modal
+        open={rtoOpen}
+        onClose={() => setRtoOpen(false)}
+        title="Initiate RTO"
+        description="The parcel stops being delivered and starts its journey back to the sender."
+        footer={<><Button variant="secondary" onClick={() => setRtoOpen(false)}>Cancel</Button><Button variant="danger" onClick={handleInitiateRto}>Initiate RTO</Button></>}
+      >
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#697086', display: 'block', marginBottom: 6 }}>Reason for return</label>
+        <input
+          value={rtoReason}
+          onChange={(e) => setRtoReason(e.target.value)}
+          placeholder="Why is this going back?"
+          style={{ width: '100%', border: '1.5px solid #E3E7EF', borderRadius: 9, padding: '10px 12px', fontSize: 13 }}
+        />
       </Modal>
     </PortalLayout>
   );

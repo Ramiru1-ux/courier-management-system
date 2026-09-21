@@ -12,7 +12,7 @@ import { FAILURE_REASONS, failureReasonLabel } from '../../utils/shipmentStatus'
 export default function FailedDeliveryPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { shipments, updateShipmentStatus } = useStore();
+  const { shipments, markDeliveryFailed } = useStore();
   const driverId = user?.driverId || 'DRV-01';
 
   const pending = useMemo(() => shipments.filter((s) => s.driverId === driverId && s.status === 'OUT_FOR_DELIVERY'), [shipments, driverId]);
@@ -23,7 +23,9 @@ export default function FailedDeliveryPage() {
   const handleSubmit = () => {
     if (!shipmentId) return;
     const shipment = shipments.find((s) => s.id === shipmentId);
-    updateShipmentStatus(shipmentId, 'DELIVERY_FAILED', `Delivery failed - ${failureReasonLabel(reason)}${notes ? `: ${notes}` : ''}`);
+    // Records the reason, the attempting driver and the timestamp as real
+    // fields on the shipment, not just a line of history text.
+    markDeliveryFailed(shipmentId, reason, notes);
     toast.error(`${shipment?.trackingNumber} marked as failed delivery`);
     navigate('/driver/deliveries');
   };

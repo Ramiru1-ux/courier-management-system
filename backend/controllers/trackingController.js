@@ -1,12 +1,21 @@
-const Shipment = require("../models/Shipment");
-const { createCrudController } = require("../utils/controllerFactory");
 const { getAppModel, stripInternals } = require("../models/appData");
 const { validationError, required, optionalString, number } = require("../validators/validatorHelpers");
 
-const crud = createCrudController(Shipment, "Shipment", {
-	searchFields: ["trackingNumber", "recipientName", "recipientPhone", "status"],
-	sort: { createdAt: -1 },
-});
+/**
+ * Everything here reads the authoritative cms_* collections through
+ * models/appData.js.
+ *
+ * This file used to ALSO require models/Shipment.js and expose generic CRUD
+ * handlers built on it. That model writes to a separate `shipments`
+ * collection - a second home for the entity the whole application already
+ * keeps in cms_shipments - and simply requiring it made Mongoose create that
+ * duplicate collection on every server start. The handlers it backed
+ * (trackShipment, getTracking, getShipmentTracking) were not reachable from
+ * the frontend: the public tracking page only calls
+ * GET /tracking/:trackingNumber, plus the complaint and review endpoints
+ * below, all of which use cms_* data. The import and those handlers are
+ * therefore gone, leaving one source of truth for a shipment.
+ */
 
 /** Finds the real, authoritative shipment doc for a tracking number, or
  * null. Shared by every public (unauthenticated) endpoint below so they all
@@ -190,9 +199,6 @@ const submitReview = async (req, res) => {
 };
 
 module.exports = {
-	trackShipment: crud.list,
-	getTracking: crud.list,
-	getShipmentTracking: crud.getById,
 	getTrackingByNumber,
 	submitComplaint,
 	submitReview,

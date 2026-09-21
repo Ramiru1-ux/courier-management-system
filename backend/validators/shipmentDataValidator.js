@@ -23,21 +23,9 @@
  * truth every page already agrees on).
  */
 const { validationError, required, optionalString, number, oneOf, personName, postalText } = require("./validatorHelpers");
+const { STATUSES, FAILURE_REASONS, checkTransition } = require("../config/shipmentWorkflow");
 
 const SERVICE_TYPES = ["Standard", "Express", "Priority", "Same-Day", "Regional"];
-const STATUSES = [
-	"CREATED",
-	"PICKED_UP",
-	"AT_ORIGIN_BRANCH",
-	"OUT_FOR_DELIVERY",
-	"DELIVERED",
-	"DELIVERY_FAILED",
-	"RTO",
-	"CANCELLED",
-	"DAMAGED",
-	"LOST",
-	"ON_HOLD",
-];
 
 /** Validates one shipment record. Throws a validationError (400, with a
  * `field` naming exactly which one) on the first problem found.
@@ -82,6 +70,41 @@ function validateShipmentRecord(item, index, context = {}) {
 
 	oneOf(item.serviceType || "Standard", path("serviceType"), SERVICE_TYPES);
 	oneOf(item.status, path("status"), STATUSES);
+
+	// The failed / RTO workflow is enforced HERE, server-side, against the
+	// status this shipment currently has in MongoDB - never against whatever
+	// the client claims it was. Without this a role could put a shipment into
+	// any state it liked simply by sending that value in the shipments list:
+	// a driver could close off a return as completed, or a failed delivery
+	// could jump straight past the return journey.
+	//
+	// Only runs when the status actually changed, so re-saving an untouched
+	// record can never be rejected by a rule added after it was created.
+	const previousStatus = storedItem ? storedItem.status : null;
+	if (item.status !== previousStatus) {
+		const problem = checkTransition(previousStatus, item.status, context.role);
+		if (problem) {
+			throw validationError(`${path("status")}: ${problem}`, path("status"));
+		}
+	}
+
+	// A failed delivery must say why. The reason is stored on the shipment as
+	// a real field, not only buried in a history line, so the merchant's
+	// Failed/RTO list can show it and it can be reported on.
+	if (item.status === "DELIVERY_FAILED") {
+		if (item.status !== previousStatus || item.failureReason !== undefined) {
+			oneOf(required(item.failureReason, path("failureReason")), path("failureReason"), FAILURE_REASONS);
+		}
+	}
+	if (item.failedAt !== undefined && item.failedAt !== null && Number.isNaN(Date.parse(item.failedAt))) {
+		throw validationError(`${path("failedAt")} must be a valid date`, path("failedAt"));
+	}
+	if (item.rtoInitiatedAt !== undefined && item.rtoInitiatedAt !== null && Number.isNaN(Date.parse(item.rtoInitiatedAt))) {
+		throw validationError(`${path("rtoInitiatedAt")} must be a valid date`, path("rtoInitiatedAt"));
+	}
+	if (item.rtoCompletedAt !== undefined && item.rtoCompletedAt !== null && Number.isNaN(Date.parse(item.rtoCompletedAt))) {
+		throw validationError(`${path("rtoCompletedAt")} must be a valid date`, path("rtoCompletedAt"));
+	}
 
 	// A shipment with zero or negative weight, or a negative COD amount,
 	// cannot exist in reality - COD of exactly 0 is valid (a prepaid

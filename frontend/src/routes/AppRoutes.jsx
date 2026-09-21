@@ -60,6 +60,7 @@ import RouteViewPage from '../pages/driver/RouteViewPage';
 
 import MerchantDashboardPage from '../pages/merchant/MerchantDashboardPage';
 import MerchantShipmentsPage from '../pages/merchant/MerchantShipmentsPage';
+import MerchantFailedRtoPage from '../pages/merchant/FailedRtoPage';
 import MerchantBulkUploadPage from '../pages/merchant/BulkUploadPage';
 import MerchantOwnSettlementsPage from '../pages/merchant/SettlementsPage';
 import MerchantInvoicesPage from '../pages/merchant/InvoicesPage';
@@ -195,6 +196,7 @@ export default function AppRoutes() {
         <Route element={<RoleBasedRoute allowedRoles={['merchant']} />}>
           <Route path="/merchant" element={<MerchantDashboardPage />} />
           <Route path="/merchant/shipments" element={<MerchantShipmentsPage />} />
+          <Route path="/merchant/failed-rto" element={<MerchantFailedRtoPage />} />
           <Route path="/merchant/shipments/new" element={<CreateShipmentPage />} />
           <Route path="/merchant/shipments/bulk" element={<MerchantBulkUploadPage />} />
           <Route path="/merchant/bulk-upload" element={<MerchantBulkUploadPage />} />
