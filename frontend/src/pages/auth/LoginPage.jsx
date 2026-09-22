@@ -4,7 +4,7 @@ import { ArrowRight, Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useAuth from '../../hooks/useAuth';
 import authApi from '../../api/authApi';
-import { generateOtp, MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MS } from '../../utils/authSecurity';
+import { MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MS } from '../../utils/authSecurity';
 import { PORTAL_ROLE } from '../../config/portal';
 import AUTH_ACCOUNTS from '../../config/authAccounts';
 
@@ -119,8 +119,11 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '', remember: true });
   const [error, setError] = useState('');
   const [stage, setStage] = useState('credentials'); // credentials | otp
-  const [otpCode, setOtpCode] = useState('');
   const [otpInput, setOtpInput] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');   // masked address, for display only
+  const [otpNotice, setOtpNotice] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
   const [lockedUntil, setLockedUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [submitting, setSubmitting] = useState(false);
@@ -208,15 +211,22 @@ export default function LoginPage() {
       clearFailedAttempts();
       setError('');
 
-      // Second factor (FR-01 "Optional 2FA"). No SMS/email provider is
-      // configured, so the code is shown in the UI with a clear demo label
-      // instead of pretending to deliver it silently.
-      const code = generateOtp();
-      setOtpCode(code);
-      setOtpInput('');
-      pendingAuthRef.current = { token: response.token, user: response.data };
-      setStage('otp');
-      toast.success('Password verified. Enter the verification code to finish signing in.');
+      // Admin, finance, dispatcher, merchant and driver get a one-time code
+      // emailed to their own address. The server keeps the sign-in token back
+      // until that code is confirmed, and the code never reaches the browser.
+      if (response.twoFactorRequired) {
+        pendingAuthRef.current = { email: normalizedEmail };
+        setOtpEmail(response.email || normalizedEmail);
+        setOtpNotice(response.message || 'We sent a 6-digit verification code to your email.');
+        setOtpInput('');
+        setStage('otp');
+        toast.success('Password verified. Check your email for the verification code.');
+        return;
+      }
+
+      const signedIn = login({ token: response.token, user: response.data }, { remember: form.remember });
+      toast.success(`Signed in as ${signedIn.name}`);
+      navigate(ROLE_HOME[signedIn.role] || '/', { replace: true });
     } catch (apiError) {
       if (apiError?.status === 401) {
         registerFailedAttempt(apiError.message);
@@ -228,23 +238,52 @@ export default function LoginPage() {
     }
   };
 
-  const handleVerifyOtp = (event) => {
+  const handleVerifyOtp = async (event) => {
     event.preventDefault();
-    if (otpInput.trim() !== otpCode) {
-      setError('That verification code is incorrect. Please try again.');
-      return;
-    }
-    const pending = pendingAuthRef.current;
-    if (!pending) {
+    if (verifying) return;
+    const pendingEmail = pendingAuthRef.current?.email;
+    if (!pendingEmail) {
       setStage('credentials');
       setError('Your sign-in attempt expired. Please enter your password again.');
       return;
     }
-    setError('');
-    const signedIn = login(pending, { remember: form.remember });
-    pendingAuthRef.current = null;
-    toast.success(`Signed in as ${signedIn.name}`);
-    navigate(ROLE_HOME[signedIn.role] || '/', { replace: true });
+    const code = otpInput.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      // The server checks the code and only now returns the sign-in token.
+      const response = await authApi.verifyTwoFactor({ email: pendingEmail, code });
+      setError('');
+      const signedIn = login({ token: response.token, user: response.data }, { remember: form.remember });
+      pendingAuthRef.current = null;
+      toast.success(`Signed in as ${signedIn.name}`);
+      navigate(ROLE_HOME[signedIn.role] || '/', { replace: true });
+    } catch (apiError) {
+      setError(apiError?.message || 'That verification code is incorrect. Please try again.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    const pendingEmail = pendingAuthRef.current?.email;
+    if (!pendingEmail || resending) return;
+    setResending(true);
+    try {
+      const response = await authApi.resendTwoFactor({ email: pendingEmail });
+      setError('');
+      setOtpInput('');
+      setOtpNotice(response.message || 'A new code has been sent to your email.');
+      toast.success('A new code has been sent to your email.');
+    } catch (apiError) {
+      setError(apiError?.message || 'Could not send a new code.');
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
@@ -314,11 +353,11 @@ export default function LoginPage() {
           <>
             <div className="auth-kicker">Two-factor verification</div>
             <h1 className="auth-title">Enter your code</h1>
-            <div className="auth-subtitle">A one-time verification code has been "sent" to {form.email}.</div>
+            <div className="auth-subtitle">{otpNotice}</div>
 
             <div className="auth-otp-banner">
               <ShieldCheck size={16} />
-              <span>Demo mode - no SMS/email backend is wired up, so here's the code we would have sent: <span className="auth-otp-code">{otpCode}</span></span>
+              <span>The code was emailed to {otpEmail}. It expires in 10 minutes. Check your spam folder if it hasn't arrived.</span>
             </div>
 
             <form className="auth-form" onSubmit={handleVerifyOtp}>
@@ -329,10 +368,13 @@ export default function LoginPage() {
 
               {error && <div className="auth-error">{error}</div>}
 
-              <button type="submit" className="auth-button auth-button-primary">
-                <KeyRound size={16} /> Verify & sign in
+              <button type="submit" className="auth-button auth-button-primary" disabled={verifying}>
+                <KeyRound size={16} /> {verifying ? 'Verifying…' : 'Verify & sign in'}
               </button>
-              <button type="button" className="auth-button auth-button-ghost" onClick={() => { setStage('credentials'); setError(''); }}>
+              <button type="button" className="auth-button auth-button-ghost" onClick={handleResendOtp} disabled={resending || verifying}>
+                {resending ? 'Sending…' : 'Send a new code'}
+              </button>
+              <button type="button" className="auth-button auth-button-ghost" onClick={() => { setStage('credentials'); setError(''); setOtpInput(''); pendingAuthRef.current = null; }}>
                 Back
               </button>
             </form>

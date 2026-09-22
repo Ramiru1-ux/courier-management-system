@@ -19,6 +19,13 @@ const User = createModel("User", {
 	lastLoginAt: Date,
 	resetToken: { type: String, select: false },
 	resetTokenExpires: { type: Date, select: false },
+	// Sign-in verification code (two-factor). Only a SHA-256 hash of the 6
+	// digits is stored, never the code itself, and none of these fields are
+	// selected (or returned) unless a query explicitly asks for them.
+	twoFactorCodeHash: { type: String, select: false },
+	twoFactorExpiresAt: { type: Date, select: false },
+	twoFactorAttempts: { type: Number, default: 0, select: false },
+	twoFactorSentAt: { type: Date, select: false },
 }, {
 	indexes: [{ email: 1 }, { role: 1 }],
 	configureSchema: (schema) => {

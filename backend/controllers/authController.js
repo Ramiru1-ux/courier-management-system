@@ -4,7 +4,8 @@ const LoginDetail = require("../models/LoginDetail");
 const generateToken = require("../utils/generateToken");
 const { createCrudController } = require("../utils/controllerFactory");
 const { getLockoutSecondsRemaining, recordFailedLogin, clearFailedLogins } = require("../utils/loginAttempts");
-const { getEmailError } = require("../utils/emailValidation");
+const { getEmailError, hasMailServer } = require("../utils/emailValidation");
+const { sendTwoFactorCodeEmail } = require("../services/twoFactorEmail");
 
 const crud = createCrudController(User, "User", {
 	searchFields: ["name", "email", "phone"],
@@ -79,6 +80,47 @@ const recordLoginDetail = async (req, { user = null, email, requestedRole = null
  * endpoint directly from brute-forcing a password with no JavaScript
  * involved at all.
  */
+/**
+ * Roles that must confirm a one-time code emailed to them before they are
+ * signed in. Customers sign in with their password alone.
+ */
+const TWO_FACTOR_ROLES = new Set(["admin", "finance", "dispatcher", "merchant", "driver"]);
+const TWO_FACTOR_TTL_MINUTES = 10;
+const TWO_FACTOR_MAX_ATTEMPTS = 5;
+const TWO_FACTOR_RESEND_SECONDS = 60;
+
+const hashCode = (code) => crypto.createHash("sha256").update(String(code)).digest("hex");
+
+/** "admin@egotechworld.com" -> "ad***@egotechworld.com", for on-screen text. */
+const maskEmail = (value) => {
+	const [local, domain] = String(value).split("@");
+	if (!domain) return value;
+	return `${local.slice(0, 2)}${"*".repeat(Math.max(local.length - 2, 1))}@${domain}`;
+};
+
+const clearTwoFactor = (userId) => User.updateOne(
+	{ _id: userId },
+	{ $unset: { twoFactorCodeHash: "", twoFactorExpiresAt: "", twoFactorSentAt: "" }, $set: { twoFactorAttempts: 0 } },
+);
+
+/**
+ * Creates a fresh 6-digit code, stores only its hash with an expiry, and
+ * emails the code to the account's own address. Throws when the email could
+ * not be sent - the sign-in is then refused instead of showing the code.
+ */
+async function startTwoFactorChallenge(user) {
+	const code = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+	await User.updateOne({ _id: user._id }, {
+		$set: {
+			twoFactorCodeHash: hashCode(code),
+			twoFactorExpiresAt: new Date(Date.now() + TWO_FACTOR_TTL_MINUTES * 60 * 1000),
+			twoFactorAttempts: 0,
+			twoFactorSentAt: new Date(),
+		},
+	});
+	await sendTwoFactorCodeEmail({ name: user.name, email: user.email, code, expiresInMinutes: TWO_FACTOR_TTL_MINUTES });
+}
+
 const login = async (req, res) => {
 	try {
 		const email = String(req.body?.email || "").trim().toLowerCase();
@@ -127,9 +169,30 @@ const login = async (req, res) => {
 		}
 
 		clearFailedLogins(email);
+		await recordLoginDetail(req, { ...attempt, user, success: true });
+
+		// Admin, finance, dispatcher, merchant and driver finish signing in
+		// with a code emailed to them. No token is issued here -
+		// verifyTwoFactor() below is the only place that hands one out, so a
+		// correct password alone is not enough to get into the system.
+		if (TWO_FACTOR_ROLES.has(String(user.role).toLowerCase())) {
+			try {
+				await startTwoFactorChallenge(user);
+			} catch (mailError) {
+				console.error("Could not email the verification code:", mailError.message);
+				return bad(res, 503, "We could not email your verification code. Please try again or contact your administrator.");
+			}
+			return res.status(200).json({
+				success: true,
+				twoFactorRequired: true,
+				email: maskEmail(user.email),
+				expiresInMinutes: TWO_FACTOR_TTL_MINUTES,
+				message: `We sent a 6-digit verification code to ${maskEmail(user.email)}.`,
+			});
+		}
+
 		user.lastLoginAt = new Date();
 		await user.save({ validateBeforeSave: false });
-		await recordLoginDetail(req, { ...attempt, user, success: true });
 
 		return res.status(200).json({
 			success: true,
@@ -139,6 +202,85 @@ const login = async (req, res) => {
 		});
 	} catch (error) {
 		return res.status(500).json({ success: false, message: error.message || "Login failed" });
+	}
+};
+
+/**
+ * POST /api/auth/2fa/verify - second half of the sign-in. Checks the code
+ * that login() emailed and only then issues the JWT.
+ */
+const verifyTwoFactor = async (req, res) => {
+	try {
+		const email = String(req.body?.email || "").trim().toLowerCase();
+		const code = String(req.body?.code || "").trim();
+		if (!email || !code) return bad(res, 400, "Email and verification code are required");
+
+		const user = await User.findOne({ email }).select("+twoFactorCodeHash +twoFactorExpiresAt +twoFactorAttempts");
+		if (!user || !user.twoFactorCodeHash) {
+			return bad(res, 400, "Please sign in with your password again to get a new code");
+		}
+
+		if (!user.twoFactorExpiresAt || user.twoFactorExpiresAt.getTime() < Date.now()) {
+			await clearTwoFactor(user._id);
+			return bad(res, 400, "That code has expired. Please sign in again to get a new one.");
+		}
+
+		if ((user.twoFactorAttempts || 0) >= TWO_FACTOR_MAX_ATTEMPTS) {
+			await clearTwoFactor(user._id);
+			return bad(res, 429, "Too many incorrect codes. Please sign in again to get a new one.");
+		}
+
+		if (hashCode(code) !== user.twoFactorCodeHash) {
+			await User.updateOne({ _id: user._id }, { $inc: { twoFactorAttempts: 1 } });
+			const left = TWO_FACTOR_MAX_ATTEMPTS - (user.twoFactorAttempts || 0) - 1;
+			return bad(res, 401, `That verification code is incorrect. ${left} attempt(s) left.`);
+		}
+
+		await clearTwoFactor(user._id);
+		const lastLoginAt = new Date();
+		await User.updateOne({ _id: user._id }, { $set: { lastLoginAt } });
+		user.lastLoginAt = lastLoginAt;
+
+		return res.status(200).json({
+			success: true,
+			message: "Signed in successfully",
+			token: generateToken(user),
+			data: publicUser(user),
+		});
+	} catch (error) {
+		return res.status(500).json({ success: false, message: error.message || "Verification failed" });
+	}
+};
+
+/** POST /api/auth/2fa/resend - emails a new code for a sign-in already in progress. */
+const resendTwoFactor = async (req, res) => {
+	try {
+		const email = String(req.body?.email || "").trim().toLowerCase();
+		if (!email) return bad(res, 400, "Email is required");
+
+		const user = await User.findOne({ email }).select("+twoFactorCodeHash +twoFactorSentAt");
+		if (!user || !user.twoFactorCodeHash) {
+			return bad(res, 400, "Please sign in with your password again to get a new code");
+		}
+
+		const secondsSinceSent = user.twoFactorSentAt
+			? (Date.now() - user.twoFactorSentAt.getTime()) / 1000
+			: TWO_FACTOR_RESEND_SECONDS;
+		if (secondsSinceSent < TWO_FACTOR_RESEND_SECONDS) {
+			const wait = Math.ceil(TWO_FACTOR_RESEND_SECONDS - secondsSinceSent);
+			return bad(res, 429, `Please wait ${wait} second(s) before asking for another code`);
+		}
+
+		try {
+			await startTwoFactorChallenge(user);
+		} catch (mailError) {
+			console.error("Could not email the verification code:", mailError.message);
+			return bad(res, 503, "We could not email your verification code. Please try again or contact your administrator.");
+		}
+
+		return res.status(200).json({ success: true, message: `A new code was sent to ${maskEmail(user.email)}.` });
+	} catch (error) {
+		return res.status(500).json({ success: false, message: error.message || "Could not resend the code" });
 	}
 };
 
@@ -153,6 +295,9 @@ const register = async (req, res) => {
 		if (!email || !body.password) return bad(res, 400, "Email and password are required");
 		const emailError = getEmailError(email);
 		if (emailError) return bad(res, 400, emailError);
+		if (!(await hasMailServer(email))) {
+			return bad(res, 400, "That email domain cannot receive email. Please check the spelling (for example gmail.com or yahoo.com).");
+		}
 		if (String(body.password).length < 6) return bad(res, 400, "Password must be at least 6 characters");
 
 		// Only a document that actually has a password is a real login account.
@@ -383,6 +528,8 @@ const updateProfile = async (req, res) => {
 
 module.exports = {
 	login,
+	verifyTwoFactor,
+	resendTwoFactor,
 	register,
 	getMe,
 	logout,

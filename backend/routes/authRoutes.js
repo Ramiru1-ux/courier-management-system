@@ -29,6 +29,8 @@ const accountFlowLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30
 
 // --- public ---
 router.post("/login", loginLimiter, controller.login);
+router.post("/2fa/verify", loginLimiter, controller.verifyTwoFactor);
+router.post("/2fa/resend", accountFlowLimiter, controller.resendTwoFactor);
 router.post("/logout", optionalAuth, controller.logout);
 router.post("/forgot-password", accountFlowLimiter, controller.forgotPassword);
 router.post("/reset-password", accountFlowLimiter, controller.resetPassword);

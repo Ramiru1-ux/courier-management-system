@@ -36,4 +36,32 @@ const getEmailError = (value) => {
 	return "";
 };
 
-module.exports = { getEmailError };
+const dns = require("dns").promises;
+
+/**
+ * Checks that the email's domain really has mail servers (DNS MX records),
+ * so gmail.com / yahoo.com pass and a typo such as gmial.com or yaho.com is
+ * rejected.
+ *
+ * It cannot tell whether one particular mailbox (e.g. kamal@gmail.com)
+ * exists: Gmail, Yahoo and Outlook deliberately accept every address during
+ * such a check so that spammers cannot harvest real ones. The proof that a
+ * mailbox works is the person receiving the sign-in code sent to it.
+ *
+ * A DNS failure that is not "this domain has no mail" (network down, DNS
+ * timeout) is treated as a pass, so a temporary outage never blocks an admin
+ * from creating an account.
+ */
+const hasMailServer = async (value) => {
+	const domain = String(value || "").trim().split("@")[1];
+	if (!domain) return false;
+	try {
+		const records = await dns.resolveMx(domain);
+		return Array.isArray(records) && records.length > 0;
+	} catch (error) {
+		if (["ENOTFOUND", "ENODATA", "ENODOMAIN", "NXDOMAIN"].includes(error.code)) return false;
+		return true;
+	}
+};
+
+module.exports = { getEmailError, hasMailServer };
